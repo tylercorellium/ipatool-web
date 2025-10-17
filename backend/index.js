@@ -510,8 +510,13 @@ app.get('/api/manifest/:bundleId', (req, res) => {
   const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
 
   const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
+  const manifestUrl = `${baseUrl}/api/manifest/${bundleId}`;
+  const debugUrl = `${baseUrl}/api/manifest/${bundleId}/debug`;
+
   console.log('[API] Generating manifest for:', ipaFile);
   console.log('[API] Base URL:', baseUrl);
+  console.log('[API] Manifest URL:', manifestUrl);
+  console.log('[API] Debug URL:', debugUrl);
   console.log('[API] IPA URL:', ipaUrl);
   console.log('[API] Protocol detected:', protocol, 'Host:', host);
 

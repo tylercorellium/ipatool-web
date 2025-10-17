@@ -76,6 +76,9 @@ npm start
 ```
 
 Alternatively set `REACT_APP_API_URL` (for example `https://your.server.ip:3101/api`) to fully specify the backend URL.
+See `ipatool-frontend/.env.sample` for a template you can copy to `.env`.
+
+> **Tip:** When you serve the frontend over HTTPS, the backend must also be reachable via HTTPS (or the browser will block requests as mixed content). Use `setup-ssl.sh` to generate certs or run the frontend with `npm run start:http` during local development.
 
 ## Usage
 

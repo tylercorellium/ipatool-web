@@ -3,14 +3,36 @@ import { AuthCredentials, AuthResponse, SearchResponse } from './types';
 
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
+const ensureApiSuffix = (value: string) => {
+  const normalised = stripTrailingSlash(value);
+  return normalised.endsWith('/api') ? normalised : `${normalised}/api`;
+};
+
+const normaliseEnvApiUrl = (value: string) => {
+  let apiUrl = ensureApiSuffix(value.trim());
+
+  if (
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:' &&
+    apiUrl.startsWith('http://')
+  ) {
+    const upgraded = apiUrl.replace(/^http:\/\//, 'https://');
+    console.warn(
+      `[API] Detected HTTPS frontend with HTTP backend URL (${apiUrl}). ` +
+        'Upgrading to HTTPS to avoid mixed-content errors.'
+    );
+    apiUrl = upgraded;
+  }
+
+  return stripTrailingSlash(apiUrl);
+};
+
 const resolveBackendBaseUrl = () => {
   const envApiUrl = process.env.REACT_APP_API_URL;
 
   if (envApiUrl) {
-    const normalised = stripTrailingSlash(envApiUrl);
-    return normalised.endsWith('/api')
-      ? normalised.replace(/\/api$/, '')
-      : normalised;
+    const normalisedApi = normaliseEnvApiUrl(envApiUrl);
+    return normalisedApi.replace(/\/api$/, '');
   }
 
   const protocol =
@@ -19,9 +41,7 @@ const resolveBackendBaseUrl = () => {
   const hostname =
     process.env.REACT_APP_BACKEND_HOST ||
     (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
-  const port =
-    process.env.REACT_APP_BACKEND_PORT ||
-    '3001';
+  const port = process.env.REACT_APP_BACKEND_PORT || '3001';
 
   const defaultPort = protocol === 'https:' ? '443' : '80';
   const portSegment = port && port !== defaultPort ? `:${port}` : '';
@@ -29,10 +49,15 @@ const resolveBackendBaseUrl = () => {
   return `${protocol}//${hostname}${portSegment}`;
 };
 
-export const BACKEND_BASE_URL = resolveBackendBaseUrl();
-export const API_BASE_URL = stripTrailingSlash(
-  process.env.REACT_APP_API_URL || `${BACKEND_BASE_URL}/api`
-);
+const resolvedApiBase =
+  process.env.REACT_APP_API_URL &&
+  normaliseEnvApiUrl(process.env.REACT_APP_API_URL);
+
+export const BACKEND_BASE_URL = resolvedApiBase
+  ? resolvedApiBase.replace(/\/api$/, '')
+  : resolveBackendBaseUrl();
+
+export const API_BASE_URL = resolvedApiBase || `${BACKEND_BASE_URL}/api`;
 
 console.log('[API] Using backend URL:', API_BASE_URL);
 

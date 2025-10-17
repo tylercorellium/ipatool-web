@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Box,
@@ -39,8 +39,25 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [apps, setApps] = useState<AppType[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
+
+  // Check authentication status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      console.log('[App] Checking existing authentication...');
+      const status = await api.checkAuthStatus();
+      if (status.authenticated) {
+        console.log('[App] User already authenticated, skipping login');
+        setIsAuthenticated(true);
+        // Set dummy credentials since we don't need them for search/download
+        setCredentials({ email: '', password: '' });
+      }
+      setIsCheckingAuth(false);
+    };
+    checkAuth();
+  }, []);
 
   const handleLogin = async (creds: AuthCredentials) => {
     console.log('[App] handleLogin called');
@@ -143,7 +160,12 @@ function App() {
         </AppBar>
 
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-          {!isAuthenticated ? (
+          {isCheckingAuth ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+              <CircularProgress />
+              <Typography sx={{ ml: 2 }}>Checking authentication...</Typography>
+            </Box>
+          ) : !isAuthenticated ? (
             <LoginForm
               onLogin={handleLogin}
               requiresTwoFactor={requiresTwoFactor}

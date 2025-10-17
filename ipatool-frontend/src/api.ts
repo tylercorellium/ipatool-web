@@ -7,6 +7,18 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api
 console.log('[API] Using backend URL:', API_BASE_URL);
 
 export const api = {
+  async checkAuthStatus(): Promise<{ authenticated: boolean }> {
+    console.log('[API] Checking authentication status...');
+    try {
+      const response = await axios.get(`${API_BASE_URL}/auth/status`);
+      console.log('[API] Auth status:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('[API] Auth status check error:', error.message);
+      return { authenticated: false };
+    }
+  },
+
   async login(credentials: AuthCredentials): Promise<AuthResponse> {
     console.log('[API] Attempting login with email:', credentials.email.substring(0, 3) + '***');
     try {

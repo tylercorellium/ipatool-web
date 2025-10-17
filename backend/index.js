@@ -291,6 +291,29 @@ function parseSearchResults(output) {
   return apps;
 }
 
+// Check authentication status endpoint
+app.get('/api/auth/status', async (req, res) => {
+  console.log('[API] GET /api/auth/status - Checking if user is authenticated');
+
+  try {
+    // Try to get account info to see if user is authenticated
+    const result = await executeIpatool(['auth', 'info']);
+
+    // If auth info succeeds, user is authenticated
+    console.log('[API] User is authenticated');
+    res.json({
+      authenticated: true,
+      message: 'User is authenticated'
+    });
+  } catch (error) {
+    console.log('[API] User is not authenticated:', error.message);
+    res.json({
+      authenticated: false,
+      message: 'User is not authenticated'
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

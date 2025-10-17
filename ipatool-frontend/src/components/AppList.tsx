@@ -16,7 +16,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import InstallMobileIcon from '@mui/icons-material/InstallMobile';
 import AppleIcon from '@mui/icons-material/Apple';
 import { App } from '../types';
-import { BACKEND_BASE_URL } from '../api';
+import { BACKEND_BASE_URL, api } from '../api';
 
 interface AppListProps {
   apps: App[];
@@ -40,20 +40,38 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
     }
   };
 
-  const handleInstall = (bundleId: string, appName: string) => {
-    // Generate the itms-services URL for OTA installation
-    const baseUrl = BACKEND_BASE_URL;
-    const filename = `${appName}.ipa`;
-    const manifestUrl = `${baseUrl}/api/manifest/${encodeURIComponent(filename)}`;
-    const installUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
-
+  const handleInstall = async (bundleId: string, appName: string) => {
     if (!isHttps) {
       setError('Direct installation requires HTTPS. Please download the IPA file instead.');
       return;
     }
 
-    // Open the installation URL
-    window.location.href = installUrl;
+    setDownloadingId(bundleId);
+    setError(null);
+
+    try {
+      // First, prepare the IPA for OTA installation
+      console.log('[Install] Preparing IPA for OTA installation:', bundleId);
+      const result = await api.download(bundleId, false);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to prepare IPA');
+      }
+
+      // Generate the itms-services URL for OTA installation using bundleId
+      const baseUrl = BACKEND_BASE_URL;
+      const manifestUrl = `${baseUrl}/api/manifest/${encodeURIComponent(bundleId)}`;
+      const installUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
+
+      console.log('[Install] Opening OTA installation URL');
+      // Open the installation URL
+      window.location.href = installUrl;
+    } catch (err: any) {
+      console.error('[Install] Error:', err);
+      setError(err.message || 'Failed to prepare installation');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   if (apps.length === 0) {

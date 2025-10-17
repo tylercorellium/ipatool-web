@@ -170,11 +170,11 @@ app.post('/api/search', async (req, res) => {
   }
 });
 
-// Download endpoint
+// Download endpoint - returns metadata for OTA or direct download
 app.post('/api/download', async (req, res) => {
-  const { bundleId } = req.body;
+  const { bundleId, directDownload } = req.body;
 
-  console.log('[API] POST /api/download - Bundle ID:', bundleId);
+  console.log('[API] POST /api/download - Bundle ID:', bundleId, 'Direct:', directDownload);
 
   if (!bundleId) {
     return res.status(400).json({ error: 'Bundle ID is required' });
@@ -215,27 +215,36 @@ app.post('/api/download', async (req, res) => {
     const ipaPath = path.join(outputDir, ipaFile);
     console.log('[API] IPA file found:', ipaFile);
 
-    // Set headers for file download
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${ipaFile}"`);
+    // If direct download is requested, stream the file
+    if (directDownload) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${ipaFile}"`);
 
-    // Stream the file to the response
-    const fileStream = fs.createReadStream(ipaPath);
+      const fileStream = fs.createReadStream(ipaPath);
 
-    fileStream.on('error', (error) => {
-      console.error('[API] File stream error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to stream file' });
-      }
-    });
+      fileStream.on('error', (error) => {
+        console.error('[API] File stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to stream file' });
+        }
+      });
 
-    fileStream.on('end', () => {
-      console.log('[API] File stream completed');
-      // Clean up the temporary directory
-      fs.rmSync(outputDir, { recursive: true, force: true });
-    });
+      fileStream.on('end', () => {
+        console.log('[API] File stream completed');
+      });
 
-    fileStream.pipe(res);
+      fileStream.pipe(res);
+    } else {
+      // Return metadata for OTA installation
+      res.json({
+        success: true,
+        filename: ipaFile,
+        bundleId: bundleId,
+        downloadUrl: `/api/download-file/${ipaFile}`,
+        manifestUrl: `/api/manifest/${bundleId}`,
+        message: 'IPA ready for installation'
+      });
+    }
 
   } catch (error) {
     console.error('[API] Download error:', error.message);
@@ -344,16 +353,62 @@ app.get('/api/health', (req, res) => {
 });
 
 // Endpoint to generate manifest.plist for OTA installation
-app.get('/api/manifest/:filename', (req, res) => {
-  const { filename } = req.params;
-  const bundleId = filename.replace('.ipa', '');
+app.get('/api/manifest/:bundleId', (req, res) => {
+  const { bundleId } = req.params;
+  const fs = require('fs');
+  const path = require('path');
+
+  console.log('[API] Generating manifest for bundle:', bundleId);
+
+  // Find the IPA file for this bundle ID in /tmp/ipatool_* directories
+  const tmpDir = '/tmp';
+  let ipaFile = null;
+  let appName = bundleId; // fallback
+
+  try {
+    const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
+
+    for (const entry of entries) {
+      const dirPath = path.join(tmpDir, entry);
+
+      try {
+        const stat = fs.statSync(dirPath);
+        if (!stat.isDirectory()) continue;
+      } catch (error) {
+        continue;
+      }
+
+      const files = fs.readdirSync(dirPath);
+      const foundIpa = files.find(f => f.endsWith('.ipa'));
+
+      if (foundIpa) {
+        // Check if this IPA is for the requested bundle ID by examining the filename
+        // ipatool typically names files as AppName_BundleId_Version.ipa
+        if (foundIpa.includes(bundleId) || !ipaFile) {
+          ipaFile = foundIpa;
+          appName = foundIpa.replace('.ipa', '').split('_')[0] || bundleId;
+
+          if (foundIpa.includes(bundleId)) {
+            break; // Found exact match
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[API] Error finding IPA:', error.message);
+  }
+
+  if (!ipaFile) {
+    return res.status(404).json({ error: 'IPA file not found for this bundle ID' });
+  }
 
   // Get the server URL from request headers
-  const protocol = req.protocol;
+  // Force HTTPS for manifest URL as iOS requires it
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('host');
-  const baseUrl = `${protocol}://${host}`;
+  const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
 
-  console.log('[API] Generating manifest for:', filename, 'at', baseUrl);
+  console.log('[API] Generating manifest for:', ipaFile, 'at', baseUrl);
 
   // Generate manifest.plist
   const manifest = `<?xml version="1.0" encoding="UTF-8"?>
@@ -369,7 +424,7 @@ app.get('/api/manifest/:filename', (req, res) => {
                     <key>kind</key>
                     <string>software-package</string>
                     <key>url</key>
-                    <string>${baseUrl}/api/download-file/${filename}</string>
+                    <string>${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}</string>
                 </dict>
             </array>
             <key>metadata</key>
@@ -381,7 +436,7 @@ app.get('/api/manifest/:filename', (req, res) => {
                 <key>kind</key>
                 <string>software</string>
                 <key>title</key>
-                <string>${filename.replace('.ipa', '')}</string>
+                <string>${appName}</string>
             </dict>
         </dict>
     </array>

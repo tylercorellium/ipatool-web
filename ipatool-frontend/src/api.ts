@@ -123,14 +123,26 @@ export const api = {
     }
   },
 
-  async download(bundleId: string): Promise<Blob> {
-    console.log('[API] Downloading app:', bundleId);
-    const response = await axios.post(
-      `${API_BASE_URL}/download`,
-      { bundleId },
-      { responseType: 'blob' }
-    );
-    console.log('[API] Download complete');
-    return response.data;
+  async download(bundleId: string, directDownload: boolean = true): Promise<any> {
+    console.log('[API] Downloading app:', bundleId, 'Direct:', directDownload);
+
+    if (directDownload) {
+      // Direct download - returns blob
+      const response = await axios.post(
+        `${API_BASE_URL}/download`,
+        { bundleId, directDownload: true },
+        { responseType: 'blob' }
+      );
+      console.log('[API] Download complete');
+      return response.data;
+    } else {
+      // OTA preparation - returns metadata
+      const response = await axios.post(
+        `${API_BASE_URL}/download`,
+        { bundleId, directDownload: false }
+      );
+      console.log('[API] IPA prepared for OTA:', response.data);
+      return response.data;
+    }
   }
 };

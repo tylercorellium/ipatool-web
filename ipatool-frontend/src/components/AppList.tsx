@@ -97,6 +97,18 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
         </Alert>
       )}
 
+      {isHttps && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight="bold" gutterBottom>
+            ⚠️ OTA Installation Limitation
+          </Typography>
+          <Typography variant="body2">
+            App Store IPAs have DRM protection and may not install via OTA (Over-The-Air).
+            If installation fails, use the Download button and sideload with AltStore, Sideloadly, or Apple Configurator instead.
+          </Typography>
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}

@@ -131,7 +131,7 @@ app.post('/api/search', async (req, res) => {
 
   try {
     // Execute ipatool search - search uses stored credentials from auth
-    const args = ['search', query, '--limit', '50'];
+    const args = ['search', query, '--keychain-passphrase', 'password', '--limit', '50'];
     console.log('[API] Executing search...');
     const result = await executeIpatool(args);
 

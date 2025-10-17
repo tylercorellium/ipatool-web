@@ -18,7 +18,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import LoginForm from './components/LoginForm';
 import SearchBar from './components/SearchBar';
 import AppList from './components/AppList';
-import { api } from './api';
+import { api, BACKEND_BASE_URL } from './api';
 import { App as AppType, AuthCredentials } from './types';
 
 const theme = createTheme({
@@ -187,7 +187,7 @@ function App() {
                       variant="contained"
                       startIcon={<SecurityIcon />}
                       size="small"
-                      href={`${window.location.protocol}//${window.location.host}/ssl/cert.pem`}
+                      href={`${BACKEND_BASE_URL}/ssl/cert.pem`}
                       target="_blank"
                       sx={{ ml: 2, whiteSpace: 'nowrap' }}
                     >

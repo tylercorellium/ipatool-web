@@ -601,10 +601,30 @@ app.get('/api/download-file/:filename', (req, res) => {
       const filePath = path.join(dirPath, ipaFile);
       console.log('[API] Found IPA at:', filePath);
 
+      // Get file stats to set Content-Length header (required by iOS)
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+
+      console.log('[API] IPA file size:', fileSize, 'bytes');
+
       res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', fileSize);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Accept-Ranges', 'bytes');
 
       const fileStream = fs.createReadStream(filePath);
+
+      fileStream.on('error', (error) => {
+        console.error('[API] File stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).send('File streaming error');
+        }
+      });
+
+      fileStream.on('end', () => {
+        console.log('[API] IPA file streaming completed');
+      });
+
       fileStream.pipe(res);
       return;
     }

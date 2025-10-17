@@ -408,7 +408,11 @@ app.get('/api/manifest/:bundleId', (req, res) => {
   const host = req.get('host');
   const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
 
-  console.log('[API] Generating manifest for:', ipaFile, 'at', baseUrl);
+  const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
+  console.log('[API] Generating manifest for:', ipaFile);
+  console.log('[API] Base URL:', baseUrl);
+  console.log('[API] IPA URL:', ipaUrl);
+  console.log('[API] Protocol detected:', protocol, 'Host:', host);
 
   // Generate manifest.plist
   const manifest = `<?xml version="1.0" encoding="UTF-8"?>
@@ -424,7 +428,7 @@ app.get('/api/manifest/:bundleId', (req, res) => {
                     <key>kind</key>
                     <string>software-package</string>
                     <key>url</key>
-                    <string>${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}</string>
+                    <string>${ipaUrl}</string>
                 </dict>
             </array>
             <key>metadata</key>

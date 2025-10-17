@@ -6,7 +6,11 @@ const { PassThrough } = require('stream');
 const app = express();
 const port = 3001;
 
-app.use(cors());
+// CORS configuration - allow requests from any origin (for development)
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
 app.use(express.json());
 
 // Store active sessions temporarily (in production, use Redis or similar)
@@ -291,6 +295,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.listen(port, () => {
-  console.log(`Server listening at http://localhost:${port}`);
+// Listen on all network interfaces (0.0.0.0) so it's accessible remotely
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server listening at http://0.0.0.0:${port}`);
+  console.log(`Accessible at http://localhost:${port} or http://<your-server-ip>:${port}`);
 });

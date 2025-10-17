@@ -402,10 +402,22 @@ app.get('/api/download-file/:filename', (req, res) => {
 
   // Look for the file in /tmp/ipatool_* directories
   const tmpDir = '/tmp';
-  const dirs = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
+  const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
 
-  for (const dir of dirs) {
-    const dirPath = path.join(tmpDir, dir);
+  for (const entry of entries) {
+    const dirPath = path.join(tmpDir, entry);
+
+    // Check if it's actually a directory before trying to read it
+    try {
+      const stat = fs.statSync(dirPath);
+      if (!stat.isDirectory()) {
+        continue; // Skip files, only process directories
+      }
+    } catch (error) {
+      console.warn('[API] Error checking path:', dirPath, error.message);
+      continue;
+    }
+
     const files = fs.readdirSync(dirPath);
     const ipaFile = files.find(f => f === filename);
 

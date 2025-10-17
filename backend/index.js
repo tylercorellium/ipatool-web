@@ -76,8 +76,8 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   try {
-    // Build ipatool auth command
-    const args = ['auth', 'login', '-e', email, '-p', password];
+    // Build ipatool auth command with file-based keychain for headless environments
+    const args = ['auth', 'login', '-e', email, '-p', password, '--keychain-passphrase', ''];
 
     if (code) {
       args.push('-c', code);
@@ -130,8 +130,8 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    // Execute ipatool search
-    const args = ['search', query, '-e', email, '-p', password, '--limit', '50'];
+    // Execute ipatool search with file-based keychain
+    const args = ['search', query, '-e', email, '-p', password, '--keychain-passphrase', '', '--limit', '50'];
     console.log('[API] Executing search...');
     const result = await executeIpatool(args);
 
@@ -166,12 +166,13 @@ app.post('/api/download', async (req, res) => {
     // Create a temporary directory for the download
     const outputPath = `/tmp/ipatool_${Date.now()}`;
 
-    // Execute ipatool purchase (if needed) and download
+    // Execute ipatool purchase (if needed) and download with file-based keychain
     const args = [
       'download',
       '-b', bundleId,
       '-e', email,
       '-p', password,
+      '--keychain-passphrase', '',
       '-o', outputPath
     ];
 

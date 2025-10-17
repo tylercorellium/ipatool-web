@@ -42,8 +42,19 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isHttps, setIsHttps] = useState(window.location.protocol === 'https:');
+  const [isIOS, setIsIOS] = useState(false);
+  const [isChrome, setIsChrome] = useState(false);
 
   console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
+
+  // Detect iOS and Chrome
+  useEffect(() => {
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const iOS = /iphone|ipad|ipod/.test(userAgent);
+    const chrome = /crios|chrome/.test(userAgent) && !/edg/.test(userAgent);
+    setIsIOS(iOS);
+    setIsChrome(chrome);
+  }, []);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -173,15 +184,21 @@ function App() {
           ) : (
             <Box>
               {isHttps && (
-                <Alert severity="info" sx={{ mb: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
+                <Alert severity={isIOS && isChrome ? "warning" : "info"} sx={{ mb: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                    <Box sx={{ flex: 1, minWidth: 250 }}>
                       <Typography variant="body2" fontWeight="bold">
                         📱 OTA Installation Available
                       </Typography>
                       <Typography variant="body2">
                         To install apps directly on your iOS device, trust the SSL certificate first.
                       </Typography>
+                      {isIOS && isChrome && (
+                        <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                          ⚠️ You're using Chrome. Please open this page in <strong>Safari</strong> to install the certificate.
+                          Chrome cannot install iOS certificates.
+                        </Typography>
+                      )}
                     </Box>
                     <Button
                       variant="contained"
@@ -189,7 +206,8 @@ function App() {
                       size="small"
                       href={`${BACKEND_BASE_URL}/ssl/cert.pem`}
                       target="_blank"
-                      sx={{ ml: 2, whiteSpace: 'nowrap' }}
+                      disabled={isIOS && isChrome}
+                      sx={{ whiteSpace: 'nowrap' }}
                     >
                       Download Certificate
                     </Button>

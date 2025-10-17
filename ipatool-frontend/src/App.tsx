@@ -40,12 +40,17 @@ function App() {
   const [apps, setApps] = useState<AppType[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
+
   const handleLogin = async (creds: AuthCredentials) => {
+    console.log('[App] handleLogin called');
     setIsLoading(true);
     setError(null);
 
     try {
+      console.log('[App] Calling api.login...');
       const response = await api.login(creds);
+      console.log('[App] api.login response:', response);
 
       if (response.success) {
         setIsAuthenticated(true);

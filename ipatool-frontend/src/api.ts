@@ -1,7 +1,10 @@
 import axios from 'axios';
 import { AuthCredentials, AuthResponse, SearchResponse } from './types';
 
-const API_BASE_URL = 'http://localhost:3001/api';
+// Use environment variable or default to localhost
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+
+console.log('[API] Using backend URL:', API_BASE_URL);
 
 export const api = {
   async login(credentials: AuthCredentials): Promise<AuthResponse> {

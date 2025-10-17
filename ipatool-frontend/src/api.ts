@@ -34,13 +34,11 @@ export const api = {
     }
   },
 
-  async search(query: string, email: string, password: string): Promise<SearchResponse> {
+  async search(query: string): Promise<SearchResponse> {
     console.log('[API] Searching for:', query);
     try {
       const response = await axios.post(`${API_BASE_URL}/search`, {
-        query,
-        email,
-        password
+        query
       });
       console.log('[API] Search response:', response.data.apps?.length || 0, 'apps found');
       return response.data;
@@ -54,11 +52,11 @@ export const api = {
     }
   },
 
-  async download(bundleId: string, email: string, password: string): Promise<Blob> {
+  async download(bundleId: string): Promise<Blob> {
     console.log('[API] Downloading app:', bundleId);
     const response = await axios.post(
       `${API_BASE_URL}/download`,
-      { bundleId, email, password },
+      { bundleId },
       { responseType: 'blob' }
     );
     console.log('[API] Download complete');

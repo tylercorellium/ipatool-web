@@ -117,16 +117,12 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Search endpoint
 app.post('/api/search', async (req, res) => {
-  const { query, email, password } = req.body;
+  const { query } = req.body;
 
   console.log('[API] POST /api/search - Query:', query);
 
   if (!query) {
     return res.status(400).json({ error: 'Search query is required' });
-  }
-
-  if (!email || !password) {
-    return res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
@@ -152,14 +148,10 @@ app.post('/api/search', async (req, res) => {
 
 // Download endpoint
 app.post('/api/download', async (req, res) => {
-  const { bundleId, email, password } = req.body;
+  const { bundleId } = req.body;
 
   if (!bundleId) {
     return res.status(400).json({ error: 'Bundle ID is required' });
-  }
-
-  if (!email || !password) {
-    return res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
@@ -167,11 +159,10 @@ app.post('/api/download', async (req, res) => {
     const outputPath = `/tmp/ipatool_${Date.now()}`;
 
     // Execute ipatool purchase (if needed) and download with file-based keychain
+    // Download uses stored credentials from auth
     const args = [
       'download',
       '--bundle-identifier', bundleId,
-      '--email', email,
-      '--password', password,
       '--keychain-passphrase', 'password',
       '--output', outputPath
     ];

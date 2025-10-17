@@ -96,13 +96,11 @@ function App() {
   };
 
   const handleSearch = async (query: string) => {
-    if (!credentials) return;
-
     setIsSearching(true);
     setError(null);
 
     try {
-      const response = await api.search(query, credentials.email, credentials.password);
+      const response = await api.search(query);
 
       if (response.success) {
         setApps(response.apps);
@@ -122,10 +120,8 @@ function App() {
   };
 
   const handleDownload = async (bundleId: string) => {
-    if (!credentials) return;
-
     try {
-      const blob = await api.download(bundleId, credentials.email, credentials.password);
+      const blob = await api.download(bundleId);
 
       // Create a download link and trigger it
       const url = window.URL.createObjectURL(blob);

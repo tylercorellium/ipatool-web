@@ -496,8 +496,10 @@ app.get('/api/download-file/:filename', (req, res) => {
 app.get('/ssl/cert.pem', (req, res) => {
   const certPath = path.join(__dirname, '..', 'ssl', 'cert.pem');
   if (fs.existsSync(certPath)) {
-    res.setHeader('Content-Type', 'application/x-pem-file');
-    res.setHeader('Content-Disposition', 'attachment; filename="ipatool-web.pem"');
+    // Use application/x-x509-ca-cert for better iOS compatibility
+    // This triggers the certificate installation prompt on iOS
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+    res.setHeader('Content-Disposition', 'attachment; filename="ipatool-web.crt"');
     res.sendFile(certPath);
   } else {
     res.status(404).send('Certificate not found');

@@ -387,7 +387,11 @@ app.get('/api/manifest/:bundleId/debug', (req, res) => {
         console.log('[DEBUG] Found IPA file:', foundIpa);
         if (foundIpa.includes(bundleId) || !ipaFile) {
           ipaFile = foundIpa;
-          appName = foundIpa.replace('.ipa', '').split('_')[0] || bundleId;
+
+          // Extract app name from bundle ID (last part after final dot)
+          const bundleParts = bundleId.split('.');
+          const lastPart = bundleParts[bundleParts.length - 1];
+          appName = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
 
           if (foundIpa.includes(bundleId)) {
             break;
@@ -484,10 +488,17 @@ app.get('/api/manifest/:bundleId', (req, res) => {
 
       if (foundIpa) {
         // Check if this IPA is for the requested bundle ID by examining the filename
-        // ipatool typically names files as AppName_BundleId_Version.ipa
+        // ipatool typically names files as BundleId_AppId_Version.ipa
+        // Example: org.whispersystems.signal_874139669_7.80.ipa
         if (foundIpa.includes(bundleId) || !ipaFile) {
           ipaFile = foundIpa;
-          appName = foundIpa.replace('.ipa', '').split('_')[0] || bundleId;
+
+          // Extract app name from bundle ID (last part after final dot)
+          // org.whispersystems.signal -> Signal
+          const bundleParts = bundleId.split('.');
+          const lastPart = bundleParts[bundleParts.length - 1];
+          // Capitalize first letter
+          appName = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
 
           if (foundIpa.includes(bundleId)) {
             break; // Found exact match

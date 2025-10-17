@@ -297,7 +297,7 @@ app.get('/api/auth/status', async (req, res) => {
 
   try {
     // Try to get account info to see if user is authenticated
-    const result = await executeIpatool(['auth', 'info']);
+    const result = await executeIpatool(['auth', 'info', '--keychain-passphrase', 'password']);
 
     // If auth info succeeds, user is authenticated
     console.log('[API] User is authenticated');

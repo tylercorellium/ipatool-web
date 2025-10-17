@@ -168,6 +168,26 @@ See `PRD.md` for planned features including:
 - Check if 2FA is enabled on your account
 - Ensure `ipatool` can authenticate independently
 
+**Port Configuration Issues:**
+If authentication or API requests fail after changing ports:
+
+1. **Check browser console logs** for port mismatch warnings
+2. **Verify backend is running** on the expected port (default: 3001)
+3. **Configure frontend to match backend port**:
+   ```bash
+   # If backend is on port 3101:
+   cd ipatool-frontend
+   REACT_APP_BACKEND_PORT=3101 npm start
+   ```
+4. **Check CORS errors**: The backend only accepts requests from localhost/127.0.0.1 and local network IPs
+5. **Restart both servers** after changing port configurations
+
+**Frontend can't connect to backend:**
+- Open browser console (F12) and check for error messages
+- Verify the backend URL logged by the frontend matches where backend is running
+- If using HTTPS on frontend, ensure backend is also HTTPS (or use `npm run start:http` for development)
+- Check firewall settings if accessing from another device on the network
+
 **Search returns no results:**
 - Try different search terms
 - Verify you're authenticated successfully

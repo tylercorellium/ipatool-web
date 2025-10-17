@@ -11,15 +11,38 @@ const app = express();
 const port = Number(process.env.BACKEND_PORT || process.env.PORT || 3001);
 const redirectPort = Number(process.env.REDIRECT_PORT || 3000);
 
-// CORS configuration - allow requests from any origin (for development)
-app.use(cors({
-  origin: '*',
-  credentials: true
-}));
-app.use(express.json());
+// CORS configuration - dynamically allow frontend origin
+// Allow requests from localhost/127.0.0.1 on common ports, plus same-host requests
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
+    if (!origin) return callback(null, true);
 
-// Store active sessions temporarily (in production, use Redis or similar)
-const activeSessions = new Map();
+    // Parse the origin to check if it's from localhost/127.0.0.1
+    try {
+      const originUrl = new URL(origin);
+      const hostname = originUrl.hostname;
+
+      // Allow localhost, 127.0.0.1, and any IP address in local network
+      if (hostname === 'localhost' ||
+          hostname === '127.0.0.1' ||
+          hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
+          hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||
+          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/)) {
+        return callback(null, true);
+      }
+    } catch (e) {
+      console.warn('[CORS] Invalid origin:', origin);
+    }
+
+    // Reject other origins
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
 
 // Helper function to execute ipatool commands
 function executeIpatool(args, options = {}) {
@@ -91,10 +114,6 @@ app.post('/api/auth/login', async (req, res) => {
     console.log('[API] Attempting authentication...');
     const result = await executeIpatool(args);
 
-    // Generate a session token (in production, use proper JWT or session management)
-    const sessionToken = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    activeSessions.set(sessionToken, { email, timestamp: Date.now() });
-
     // Check if 2FA is required
     if (result.stderr.includes('two-factor') || result.stderr.includes('2FA')) {
       console.log('[API] 2FA required');
@@ -106,9 +125,9 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     console.log('[API] Authentication successful');
+    // Note: Session state is managed by ipatool's keychain, not server-side sessions
     res.json({
       success: true,
-      sessionToken,
       message: 'Authentication successful'
     });
   } catch (error) {

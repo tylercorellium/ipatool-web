@@ -62,12 +62,20 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+# Detect configured ports from environment or use defaults
+BACKEND_PORT="${BACKEND_PORT:-${PORT:-3001}}"
+FRONTEND_PORT="${PORT:-3000}"
+
 echo "=========================================="
 echo "🚀 Starting servers..."
 echo "=========================================="
 echo ""
-echo "Backend will start on:  http://localhost:3001"
-echo "Frontend will start on: http://localhost:3000"
+echo "Backend will start on:  http://localhost:$BACKEND_PORT"
+echo "Frontend will start on: http://localhost:$FRONTEND_PORT"
+echo ""
+echo "📝 Note: If you need custom ports, set these before running:"
+echo "   export BACKEND_PORT=<port>  # For backend"
+echo "   export PORT=<port>          # For frontend"
 echo ""
 echo "Press Ctrl+C to stop all servers"
 echo ""

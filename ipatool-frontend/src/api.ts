@@ -32,6 +32,7 @@ const resolveBackendBaseUrl = () => {
 
   if (envApiUrl) {
     const normalisedApi = normaliseEnvApiUrl(envApiUrl);
+    console.log('[API] Using configured API URL:', normalisedApi);
     return normalisedApi.replace(/\/api$/, '');
   }
 
@@ -46,7 +47,22 @@ const resolveBackendBaseUrl = () => {
   const defaultPort = protocol === 'https:' ? '443' : '80';
   const portSegment = port && port !== defaultPort ? `:${port}` : '';
 
-  return `${protocol}//${hostname}${portSegment}`;
+  const backendUrl = `${protocol}//${hostname}${portSegment}`;
+
+  // Warn if frontend is on a different port than expected
+  if (typeof window !== 'undefined') {
+    const frontendPort = window.location.port;
+    if (frontendPort && frontendPort !== port && !process.env.REACT_APP_BACKEND_PORT) {
+      console.warn(
+        `[API] Frontend is running on port ${frontendPort}, but backend auto-discovery ` +
+        `defaulted to port ${port}. If authentication fails, set REACT_APP_BACKEND_PORT ` +
+        `environment variable to the correct backend port.`
+      );
+    }
+  }
+
+  console.log('[API] Auto-discovered backend URL:', backendUrl);
+  return backendUrl;
 };
 
 const resolvedApiBase =

@@ -169,6 +169,41 @@ function App() {
         </AppBar>
 
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+          {/* Show certificate download for iOS users on HTTPS, even before login */}
+          {isHttps && !isCheckingAuth && (
+            <Alert severity={isIOS && isChrome ? "warning" : "info"} sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                <Box sx={{ flex: 1, minWidth: 250 }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    📱 SSL Certificate Setup
+                  </Typography>
+                  <Typography variant="body2">
+                    {isAuthenticated
+                      ? 'To install apps directly on your iOS device, trust the SSL certificate first.'
+                      : 'Install the SSL certificate to enable secure access and OTA installation.'}
+                  </Typography>
+                  {isIOS && isChrome && (
+                    <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                      ⚠️ You're using Chrome. Please open this page in <strong>Safari</strong> to install the certificate.
+                      Chrome cannot install iOS certificates.
+                    </Typography>
+                  )}
+                </Box>
+                <Button
+                  variant="contained"
+                  startIcon={<SecurityIcon />}
+                  size="small"
+                  href={`${BACKEND_BASE_URL}/ssl/cert.pem`}
+                  target="_blank"
+                  disabled={isIOS && isChrome}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Download Certificate
+                </Button>
+              </Box>
+            </Alert>
+          )}
+
           {isCheckingAuth ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
               <CircularProgress />
@@ -183,38 +218,6 @@ function App() {
             />
           ) : (
             <Box>
-              {isHttps && (
-                <Alert severity={isIOS && isChrome ? "warning" : "info"} sx={{ mb: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                    <Box sx={{ flex: 1, minWidth: 250 }}>
-                      <Typography variant="body2" fontWeight="bold">
-                        📱 OTA Installation Available
-                      </Typography>
-                      <Typography variant="body2">
-                        To install apps directly on your iOS device, trust the SSL certificate first.
-                      </Typography>
-                      {isIOS && isChrome && (
-                        <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-                          ⚠️ You're using Chrome. Please open this page in <strong>Safari</strong> to install the certificate.
-                          Chrome cannot install iOS certificates.
-                        </Typography>
-                      )}
-                    </Box>
-                    <Button
-                      variant="contained"
-                      startIcon={<SecurityIcon />}
-                      size="small"
-                      href={`${BACKEND_BASE_URL}/ssl/cert.pem`}
-                      target="_blank"
-                      disabled={isIOS && isChrome}
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      Download Certificate
-                    </Button>
-                  </Box>
-                </Alert>
-              )}
-
               <Typography variant="h4" component="h1" gutterBottom>
                 Search iOS Apps
               </Typography>

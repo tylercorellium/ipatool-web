@@ -8,7 +8,8 @@ const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
 
 const app = express();
-const port = 3001;
+const port = Number(process.env.BACKEND_PORT || process.env.PORT || 3001);
+const redirectPort = Number(process.env.REDIRECT_PORT || 3000);
 
 // CORS configuration - allow requests from any origin (for development)
 app.use(cors({
@@ -449,8 +450,8 @@ if (hasSSL) {
   http.createServer((req, res) => {
     res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
     res.end();
-  }).listen(3000, '0.0.0.0', () => {
-    console.log(`🔓 HTTP redirect server on port 3000 -> HTTPS`);
+  }).listen(redirectPort, '0.0.0.0', () => {
+    console.log(`🔓 HTTP redirect server on port ${redirectPort} -> HTTPS`);
   });
 
 } else {

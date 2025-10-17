@@ -41,3 +41,9 @@ frontend.log
 # OS
 .DS_Store
 Thumbs.db
+
+# SSL certificates
+ssl/
+*.pem
+*.key
+*.crt

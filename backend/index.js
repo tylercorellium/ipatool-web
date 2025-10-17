@@ -1,5 +1,9 @@
 const express = require('express');
 const cors = require('cors');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
 
@@ -401,10 +405,65 @@ app.get('/api/download-file/:filename', (req, res) => {
   res.status(404).json({ error: 'File not found' });
 });
 
-// Listen on all network interfaces (0.0.0.0) so it's accessible remotely
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Server listening at http://0.0.0.0:${port}`);
-  console.log(`Accessible at http://localhost:${port} or http://<your-server-ip>:${port}`);
-  console.log(`\n⚠️  WARNING: OTA installation requires HTTPS. Current server is HTTP only.`);
-  console.log(`   To enable direct installation, configure HTTPS with a valid certificate.`);
+// Endpoint to serve SSL certificate for iOS device installation
+app.get('/ssl/cert.pem', (req, res) => {
+  const certPath = path.join(__dirname, '..', 'ssl', 'cert.pem');
+  if (fs.existsSync(certPath)) {
+    res.setHeader('Content-Type', 'application/x-pem-file');
+    res.setHeader('Content-Disposition', 'attachment; filename="ipatool-web.pem"');
+    res.sendFile(certPath);
+  } else {
+    res.status(404).send('Certificate not found');
+  }
 });
+
+// Check if SSL certificates exist
+const sslDir = path.join(__dirname, '..', 'ssl');
+const certPath = path.join(sslDir, 'cert.pem');
+const keyPath = path.join(sslDir, 'key.pem');
+
+const hasSSL = fs.existsSync(certPath) && fs.existsSync(keyPath);
+
+if (hasSSL) {
+  // Start HTTPS server
+  const httpsOptions = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath)
+  };
+
+  https.createServer(httpsOptions, app).listen(port, '0.0.0.0', () => {
+    console.log(`========================================`);
+    console.log(`🔒 HTTPS Server running`);
+    console.log(`========================================`);
+    console.log(`Server: https://0.0.0.0:${port}`);
+    console.log(`Local:  https://localhost:${port}`);
+    console.log(`\n📱 OTA Installation: ENABLED`);
+    console.log(`   iOS devices can install apps directly`);
+    console.log(`\n⚠️  Self-signed certificate requires trust:`);
+    console.log(`   Download cert: https://<your-ip>:${port}/ssl/cert.pem`);
+    console.log(`   Install on iOS and enable in Certificate Trust Settings`);
+    console.log(`========================================`);
+  });
+
+  // Also start HTTP server that redirects to HTTPS
+  http.createServer((req, res) => {
+    res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
+    res.end();
+  }).listen(3000, '0.0.0.0', () => {
+    console.log(`🔓 HTTP redirect server on port 3000 -> HTTPS`);
+  });
+
+} else {
+  // Start HTTP server only
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`========================================`);
+    console.log(`🔓 HTTP Server running (no SSL)`);
+    console.log(`========================================`);
+    console.log(`Server: http://0.0.0.0:${port}`);
+    console.log(`Local:  http://localhost:${port}`);
+    console.log(`\n⚠️  OTA Installation: DISABLED`);
+    console.log(`   SSL certificate not found`);
+    console.log(`   Run './setup-ssl.sh' to generate certificates`);
+    console.log(`========================================`);
+  });
+}

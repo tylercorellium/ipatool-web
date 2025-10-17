@@ -150,77 +150,77 @@ app.post('/api/search', async (req, res) => {
 app.post('/api/download', async (req, res) => {
   const { bundleId } = req.body;
 
+  console.log('[API] POST /api/download - Bundle ID:', bundleId);
+
   if (!bundleId) {
     return res.status(400).json({ error: 'Bundle ID is required' });
   }
 
   try {
-    // Create a temporary directory for the download
-    const outputPath = `/tmp/ipatool_${Date.now()}`;
+    // Create a temporary output path
+    const timestamp = Date.now();
+    const outputDir = `/tmp/ipatool_${timestamp}`;
+    const fs = require('fs');
+    const path = require('path');
 
-    // Execute ipatool purchase (if needed) and download with file-based keychain
-    // Download uses stored credentials from auth
+    // Create the output directory
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Execute ipatool download - it will create a .ipa file in the output directory
     const args = [
       'download',
       '--bundle-identifier', bundleId,
       '--keychain-passphrase', 'password',
-      '--output', outputPath
+      '--output', outputDir
     ];
 
-    const ipatool = spawn('ipatool', args);
-    let downloadStarted = false;
-    let errorOutput = '';
+    console.log('[API] Downloading IPA...');
+    const result = await executeIpatool(args);
+    console.log('[API] Download command completed');
+
+    // Find the .ipa file in the output directory
+    const files = fs.readdirSync(outputDir);
+    const ipaFile = files.find(f => f.endsWith('.ipa'));
+
+    if (!ipaFile) {
+      throw new Error('No .ipa file found after download');
+    }
+
+    const ipaPath = path.join(outputDir, ipaFile);
+    console.log('[API] IPA file found:', ipaFile);
 
     // Set headers for file download
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${bundleId}.ipa"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${ipaFile}"`);
 
-    ipatool.stdout.on('data', (data) => {
-      if (!downloadStarted) {
-        downloadStarted = true;
-      }
-      // Stream the file data to response
-      res.write(data);
-    });
+    // Stream the file to the response
+    const fileStream = fs.createReadStream(ipaPath);
 
-    ipatool.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-      console.log('ipatool stderr:', data.toString());
-    });
-
-    ipatool.on('close', (code) => {
-      if (code === 0) {
-        res.end();
-      } else {
-        if (!downloadStarted) {
-          res.status(500).json({
-            error: 'Download failed',
-            details: errorOutput
-          });
-        } else {
-          res.end();
-        }
+    fileStream.on('error', (error) => {
+      console.error('[API] File stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to stream file' });
       }
     });
 
-    ipatool.on('error', (error) => {
-      console.error('Download error:', error);
-      if (!downloadStarted) {
-        res.status(500).json({
-          error: 'Download failed',
-          details: error.message
-        });
-      } else {
-        res.end();
-      }
+    fileStream.on('end', () => {
+      console.log('[API] File stream completed');
+      // Clean up the temporary directory
+      fs.rmSync(outputDir, { recursive: true, force: true });
     });
+
+    fileStream.pipe(res);
 
   } catch (error) {
-    console.error('Download error:', error);
-    res.status(500).json({
-      error: 'Download failed',
-      details: error.message
-    });
+    console.error('[API] Download error:', error.message);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Download failed',
+        details: error.message
+      });
+    }
   }
 });
 

@@ -319,8 +319,92 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Endpoint to generate manifest.plist for OTA installation
+app.get('/api/manifest/:filename', (req, res) => {
+  const { filename } = req.params;
+  const bundleId = filename.replace('.ipa', '');
+
+  // Get the server URL from request headers
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+
+  console.log('[API] Generating manifest for:', filename, 'at', baseUrl);
+
+  // Generate manifest.plist
+  const manifest = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>items</key>
+    <array>
+        <dict>
+            <key>assets</key>
+            <array>
+                <dict>
+                    <key>kind</key>
+                    <string>software-package</string>
+                    <key>url</key>
+                    <string>${baseUrl}/api/download-file/${filename}</string>
+                </dict>
+            </array>
+            <key>metadata</key>
+            <dict>
+                <key>bundle-identifier</key>
+                <string>${bundleId}</string>
+                <key>bundle-version</key>
+                <string>1.0</string>
+                <key>kind</key>
+                <string>software</string>
+                <key>title</key>
+                <string>${filename.replace('.ipa', '')}</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>`;
+
+  res.setHeader('Content-Type', 'application/xml');
+  res.send(manifest);
+});
+
+// Endpoint to serve downloaded IPA files for OTA installation
+app.get('/api/download-file/:filename', (req, res) => {
+  const { filename } = req.params;
+  const fs = require('fs');
+  const path = require('path');
+
+  console.log('[API] Serving IPA file:', filename);
+
+  // Look for the file in /tmp/ipatool_* directories
+  const tmpDir = '/tmp';
+  const dirs = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
+
+  for (const dir of dirs) {
+    const dirPath = path.join(tmpDir, dir);
+    const files = fs.readdirSync(dirPath);
+    const ipaFile = files.find(f => f === filename);
+
+    if (ipaFile) {
+      const filePath = path.join(dirPath, ipaFile);
+      console.log('[API] Found IPA at:', filePath);
+
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      return;
+    }
+  }
+
+  res.status(404).json({ error: 'File not found' });
+});
+
 // Listen on all network interfaces (0.0.0.0) so it's accessible remotely
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server listening at http://0.0.0.0:${port}`);
   console.log(`Accessible at http://localhost:${port} or http://<your-server-ip>:${port}`);
+  console.log(`\n⚠️  WARNING: OTA installation requires HTTPS. Current server is HTTP only.`);
+  console.log(`   To enable direct installation, configure HTTPS with a valid certificate.`);
 });

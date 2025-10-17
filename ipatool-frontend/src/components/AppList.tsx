@@ -9,9 +9,11 @@ import {
   Box,
   Alert,
   CircularProgress,
-  Chip
+  Chip,
+  ButtonGroup
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
+import InstallMobileIcon from '@mui/icons-material/InstallMobile';
 import AppleIcon from '@mui/icons-material/Apple';
 import { App } from '../types';
 
@@ -23,6 +25,7 @@ interface AppListProps {
 const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isHttps, setIsHttps] = useState(window.location.protocol === 'https:');
 
   const handleDownload = async (bundleId: string) => {
     setDownloadingId(bundleId);
@@ -34,6 +37,22 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  const handleInstall = (bundleId: string, appName: string) => {
+    // Generate the itms-services URL for OTA installation
+    const baseUrl = window.location.origin.replace('3000', '3001'); // Point to backend
+    const filename = `${appName}.ipa`;
+    const manifestUrl = `${baseUrl}/api/manifest/${encodeURIComponent(filename)}`;
+    const installUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
+
+    if (!isHttps) {
+      setError('Direct installation requires HTTPS. Please download the IPA file instead.');
+      return;
+    }
+
+    // Open the installation URL
+    window.location.href = installUrl;
   };
 
   if (apps.length === 0) {
@@ -52,6 +71,13 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
 
   return (
     <Box>
+      {!isHttps && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Direct installation requires HTTPS. Currently using HTTP - Install button will download instead.
+          Configure HTTPS to enable OTA installation.
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
@@ -115,21 +141,31 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
             </CardContent>
 
             <CardActions>
-              <Button
-                fullWidth
-                variant="contained"
-                startIcon={
-                  downloadingId === app.bundleId ? (
-                    <CircularProgress size={20} color="inherit" />
-                  ) : (
-                    <DownloadIcon />
-                  )
-                }
-                onClick={() => handleDownload(app.bundleId)}
-                disabled={!app.bundleId || downloadingId === app.bundleId}
-              >
-                {downloadingId === app.bundleId ? 'Downloading...' : 'Download'}
-              </Button>
+              <ButtonGroup fullWidth variant="contained">
+                <Button
+                  startIcon={
+                    downloadingId === app.bundleId ? (
+                      <CircularProgress size={20} color="inherit" />
+                    ) : (
+                      <DownloadIcon />
+                    )
+                  }
+                  onClick={() => handleDownload(app.bundleId)}
+                  disabled={!app.bundleId || downloadingId === app.bundleId}
+                  sx={{ flex: 1 }}
+                >
+                  {downloadingId === app.bundleId ? 'Downloading...' : 'Download'}
+                </Button>
+                <Button
+                  startIcon={<InstallMobileIcon />}
+                  onClick={() => handleInstall(app.bundleId, app.name)}
+                  disabled={!app.bundleId || downloadingId === app.bundleId}
+                  color={isHttps ? 'primary' : 'secondary'}
+                  sx={{ flex: 1 }}
+                >
+                  Install
+                </Button>
+              </ButtonGroup>
             </CardActions>
           </Card>
         ))}

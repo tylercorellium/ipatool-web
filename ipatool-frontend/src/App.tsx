@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
 import LogoutIcon from '@mui/icons-material/Logout';
+import SecurityIcon from '@mui/icons-material/Security';
 import LoginForm from './components/LoginForm';
 import SearchBar from './components/SearchBar';
 import AppList from './components/AppList';
@@ -40,6 +41,7 @@ function App() {
   const [apps, setApps] = useState<AppType[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isHttps, setIsHttps] = useState(window.location.protocol === 'https:');
 
   console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
 
@@ -170,6 +172,31 @@ function App() {
             />
           ) : (
             <Box>
+              {isHttps && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography variant="body2" fontWeight="bold">
+                        📱 OTA Installation Available
+                      </Typography>
+                      <Typography variant="body2">
+                        To install apps directly on your iOS device, trust the SSL certificate first.
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="contained"
+                      startIcon={<SecurityIcon />}
+                      size="small"
+                      href={`${window.location.protocol}//${window.location.host}/ssl/cert.pem`}
+                      target="_blank"
+                      sx={{ ml: 2, whiteSpace: 'nowrap' }}
+                    >
+                      Download Certificate
+                    </Button>
+                  </Box>
+                </Alert>
+              )}
+
               <Typography variant="h4" component="h1" gutterBottom>
                 Search iOS Apps
               </Typography>

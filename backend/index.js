@@ -77,10 +77,10 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     // Build ipatool auth command with file-based keychain for headless environments
-    const args = ['auth', 'login', '-e', email, '-p', password, '--keychain-passphrase', 'password'];
+    const args = ['auth', 'login', '--email', email, '--password', password, '--keychain-passphrase', 'password'];
 
     if (code) {
-      args.push('-c', code);
+      args.push('--code', code);
     }
 
     console.log('[API] Attempting authentication...');
@@ -131,7 +131,7 @@ app.post('/api/search', async (req, res) => {
 
   try {
     // Execute ipatool search with file-based keychain
-    const args = ['search', query, '-e', email, '-p', password, '--keychain-passphrase', 'password', '--limit', '50'];
+    const args = ['search', query, '--email', email, '--password', password, '--keychain-passphrase', 'password', '--limit', '50'];
     console.log('[API] Executing search...');
     const result = await executeIpatool(args);
 
@@ -169,11 +169,11 @@ app.post('/api/download', async (req, res) => {
     // Execute ipatool purchase (if needed) and download with file-based keychain
     const args = [
       'download',
-      '-b', bundleId,
-      '-e', email,
-      '-p', password,
+      '--bundle-identifier', bundleId,
+      '--email', email,
+      '--password', password,
       '--keychain-passphrase', 'password',
-      '-o', outputPath
+      '--output', outputPath
     ];
 
     const ipatool = spawn('ipatool', args);

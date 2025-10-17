@@ -352,6 +352,107 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Debug endpoint to view manifest as plain text
+app.get('/api/manifest/:bundleId/debug', (req, res) => {
+  const { bundleId } = req.params;
+  const fs = require('fs');
+  const path = require('path');
+
+  console.log('[DEBUG] Viewing manifest for bundle:', bundleId);
+
+  // Find the IPA file for this bundle ID in /tmp/ipatool_* directories
+  const tmpDir = '/tmp';
+  let ipaFile = null;
+  let appName = bundleId;
+
+  try {
+    const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
+
+    console.log('[DEBUG] Found ipatool directories:', entries);
+
+    for (const entry of entries) {
+      const dirPath = path.join(tmpDir, entry);
+
+      try {
+        const stat = fs.statSync(dirPath);
+        if (!stat.isDirectory()) continue;
+      } catch (error) {
+        continue;
+      }
+
+      const files = fs.readdirSync(dirPath);
+      const foundIpa = files.find(f => f.endsWith('.ipa'));
+
+      if (foundIpa) {
+        console.log('[DEBUG] Found IPA file:', foundIpa);
+        if (foundIpa.includes(bundleId) || !ipaFile) {
+          ipaFile = foundIpa;
+          appName = foundIpa.replace('.ipa', '').split('_')[0] || bundleId;
+
+          if (foundIpa.includes(bundleId)) {
+            break;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[DEBUG] Error finding IPA:', error.message);
+  }
+
+  if (!ipaFile) {
+    return res.status(404).send(`No IPA file found for bundle ID: ${bundleId}\n\nChecked directories in /tmp starting with 'ipatool_'`);
+  }
+
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('host');
+  const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
+  const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
+
+  const manifest = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>items</key>
+    <array>
+        <dict>
+            <key>assets</key>
+            <array>
+                <dict>
+                    <key>kind</key>
+                    <string>software-package</string>
+                    <key>url</key>
+                    <string>${ipaUrl}</string>
+                </dict>
+            </array>
+            <key>metadata</key>
+            <dict>
+                <key>bundle-identifier</key>
+                <string>${bundleId}</string>
+                <key>bundle-version</key>
+                <string>1.0</string>
+                <key>kind</key>
+                <string>software</string>
+                <key>title</key>
+                <string>${appName}</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>
+
+---DEBUG INFO---
+Protocol detected: ${protocol}
+Host: ${host}
+Base URL: ${baseUrl}
+IPA File: ${ipaFile}
+IPA URL: ${ipaUrl}
+Bundle ID: ${bundleId}
+App Name: ${appName}`;
+
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(manifest);
+});
+
 // Endpoint to generate manifest.plist for OTA installation
 app.get('/api/manifest/:bundleId', (req, res) => {
   const { bundleId } = req.params;

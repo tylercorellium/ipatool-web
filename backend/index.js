@@ -15,6 +15,8 @@ const activeSessions = new Map();
 // Helper function to execute ipatool commands
 function executeIpatool(args, options = {}) {
   return new Promise((resolve, reject) => {
+    console.log('[ipatool] Executing command:', 'ipatool', args.map(arg => arg.includes('@') || arg.length > 20 ? '***' : arg).join(' '));
+
     const ipatool = spawn('ipatool', args);
     let stdout = '';
     let stderr = '';
@@ -26,14 +28,19 @@ function executeIpatool(args, options = {}) {
     }
 
     ipatool.stdout.on('data', (data) => {
-      stdout += data.toString();
+      const output = data.toString();
+      stdout += output;
+      console.log('[ipatool stdout]:', output.trim());
     });
 
     ipatool.stderr.on('data', (data) => {
-      stderr += data.toString();
+      const output = data.toString();
+      stderr += output;
+      console.log('[ipatool stderr]:', output.trim());
     });
 
     ipatool.on('close', (code) => {
+      console.log('[ipatool] Process exited with code:', code);
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
@@ -42,6 +49,7 @@ function executeIpatool(args, options = {}) {
     });
 
     ipatool.on('error', (error) => {
+      console.error('[ipatool] Failed to start process:', error);
       reject(new Error(`Failed to start ipatool: ${error.message}`));
     });
   });
@@ -56,7 +64,10 @@ app.get('/', (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, code } = req.body;
 
+  console.log('[API] POST /api/auth/login - Email:', email ? email.substring(0, 3) + '***' : 'none', 'Has password:', !!password, 'Has 2FA code:', !!code);
+
   if (!email || !password) {
+    console.log('[API] Missing credentials');
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
@@ -68,6 +79,7 @@ app.post('/api/auth/login', async (req, res) => {
       args.push('-c', code);
     }
 
+    console.log('[API] Attempting authentication...');
     const result = await executeIpatool(args);
 
     // Generate a session token (in production, use proper JWT or session management)
@@ -76,6 +88,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Check if 2FA is required
     if (result.stderr.includes('two-factor') || result.stderr.includes('2FA')) {
+      console.log('[API] 2FA required');
       return res.json({
         success: false,
         requiresTwoFactor: true,
@@ -83,13 +96,14 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
+    console.log('[API] Authentication successful');
     res.json({
       success: true,
       sessionToken,
       message: 'Authentication successful'
     });
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('[API] Authentication error:', error.message);
     res.status(401).json({
       error: 'Authentication failed',
       details: error.message
@@ -100,6 +114,8 @@ app.post('/api/auth/login', async (req, res) => {
 // Search endpoint
 app.post('/api/search', async (req, res) => {
   const { query, email, password } = req.body;
+
+  console.log('[API] POST /api/search - Query:', query);
 
   if (!query) {
     return res.status(400).json({ error: 'Search query is required' });
@@ -112,15 +128,17 @@ app.post('/api/search', async (req, res) => {
   try {
     // Execute ipatool search
     const args = ['search', query, '-e', email, '-p', password, '--limit', '50'];
+    console.log('[API] Executing search...');
     const result = await executeIpatool(args);
 
     // Parse the output to extract app information
     // ipatool typically outputs in a structured format
     const apps = parseSearchResults(result.stdout);
+    console.log('[API] Search found', apps.length, 'apps');
 
     res.json({ success: true, apps });
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('[API] Search error:', error.message);
     res.status(500).json({
       error: 'Search failed',
       details: error.message

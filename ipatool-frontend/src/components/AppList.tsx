@@ -16,6 +16,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import InstallMobileIcon from '@mui/icons-material/InstallMobile';
 import AppleIcon from '@mui/icons-material/Apple';
 import { App } from '../types';
+import { BACKEND_BASE_URL } from '../api';
 
 interface AppListProps {
   apps: App[];
@@ -41,7 +42,7 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
 
   const handleInstall = (bundleId: string, appName: string) => {
     // Generate the itms-services URL for OTA installation
-    const baseUrl = window.location.origin.replace('3000', '3001'); // Point to backend
+    const baseUrl = BACKEND_BASE_URL;
     const filename = `${appName}.ipa`;
     const manifestUrl = `${baseUrl}/api/manifest/${encodeURIComponent(filename)}`;
     const installUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;

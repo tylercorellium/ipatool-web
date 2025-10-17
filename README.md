@@ -51,7 +51,11 @@ cd backend
 npm start
 ```
 
-The backend server will start on `http://localhost:3001`
+The backend server listens on port `3001` by default. Override it with:
+
+```bash
+BACKEND_PORT=3101 npm start
+```
 
 ### Start the Frontend Server
 
@@ -62,7 +66,16 @@ cd ipatool-frontend
 npm start
 ```
 
-The frontend application will open in your browser at `http://localhost:3000`
+The frontend application will open in your browser at `http://localhost:3000`.
+If you move the backend to a different host or port, point the frontend at it with:
+
+```bash
+REACT_APP_BACKEND_HOST=your.server.ip \
+REACT_APP_BACKEND_PORT=3101 \
+npm start
+```
+
+Alternatively set `REACT_APP_API_URL` (for example `https://your.server.ip:3101/api`) to fully specify the backend URL.
 
 ## Usage
 

@@ -1,8 +1,38 @@
 import axios from 'axios';
 import { AuthCredentials, AuthResponse, SearchResponse } from './types';
 
-// Use environment variable or default to localhost
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const resolveBackendBaseUrl = () => {
+  const envApiUrl = process.env.REACT_APP_API_URL;
+
+  if (envApiUrl) {
+    const normalised = stripTrailingSlash(envApiUrl);
+    return normalised.endsWith('/api')
+      ? normalised.replace(/\/api$/, '')
+      : normalised;
+  }
+
+  const protocol =
+    process.env.REACT_APP_BACKEND_PROTOCOL ||
+    (typeof window !== 'undefined' ? window.location.protocol : 'http:');
+  const hostname =
+    process.env.REACT_APP_BACKEND_HOST ||
+    (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
+  const port =
+    process.env.REACT_APP_BACKEND_PORT ||
+    '3001';
+
+  const defaultPort = protocol === 'https:' ? '443' : '80';
+  const portSegment = port && port !== defaultPort ? `:${port}` : '';
+
+  return `${protocol}//${hostname}${portSegment}`;
+};
+
+export const BACKEND_BASE_URL = resolveBackendBaseUrl();
+export const API_BASE_URL = stripTrailingSlash(
+  process.env.REACT_APP_API_URL || `${BACKEND_BASE_URL}/api`
+);
 
 console.log('[API] Using backend URL:', API_BASE_URL);
 

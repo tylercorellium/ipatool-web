@@ -224,57 +224,66 @@ app.post('/api/download', async (req, res) => {
   }
 });
 
+// Helper function to strip ANSI color codes
+function stripAnsiCodes(str) {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+}
+
 // Helper function to parse search results
 function parseSearchResults(output) {
+  // Strip ANSI color codes first
+  output = stripAnsiCodes(output);
+
   const apps = [];
+
+  // Try to find JSON in the output
+  // ipatool outputs logs like "5:42PM INF apps=[...] count=44"
+  const jsonMatch = output.match(/apps=(\[.*?\])\s+count=/);
+
+  if (jsonMatch) {
+    try {
+      const appsData = JSON.parse(jsonMatch[1]);
+      console.log('[Parse] Found', appsData.length, 'apps in JSON format');
+
+      // Convert ipatool format to our format
+      return appsData.map(app => ({
+        name: app.name || '',
+        bundleId: app.bundleID || '',
+        version: app.version || '',
+        icon: '' // ipatool doesn't provide icons in search
+      }));
+    } catch (error) {
+      console.error('[Parse] Failed to parse JSON:', error);
+    }
+  }
+
+  // Fallback to line-by-line parsing if JSON parsing fails
   const lines = output.split('\n').filter(line => line.trim());
 
-  // ipatool search output format parsing
-  // This is a simplified parser - adjust based on actual ipatool output format
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     // Look for lines that contain app information
-    // Typical format includes bundle ID, name, version
     const bundleIdMatch = line.match(/Bundle ID:\s*([^\s]+)/i) ||
                          line.match(/([a-z0-9\.]+\.[a-z0-9\.]+)/i);
     const nameMatch = line.match(/Name:\s*(.+?)(?:\s+Version:|$)/i);
     const versionMatch = line.match(/Version:\s*([^\s]+)/i);
 
     if (bundleIdMatch || nameMatch) {
-      // Try to extract app info from the line or surrounding lines
       let appInfo = {
         bundleId: bundleIdMatch ? bundleIdMatch[1] : '',
         name: nameMatch ? nameMatch[1].trim() : '',
         version: versionMatch ? versionMatch[1] : '',
-        icon: '' // ipatool may not provide icons directly
+        icon: ''
       };
 
-      // If we have minimal info, try to extract from context
       if (!appInfo.name && line.length > 0) {
         appInfo.name = line.trim();
       }
 
       if (appInfo.bundleId || appInfo.name) {
         apps.push(appInfo);
-      }
-    }
-  }
-
-  // If no structured results found, try alternative parsing
-  if (apps.length === 0 && output.includes('|')) {
-    // Table format parsing
-    const tableLines = lines.filter(l => l.includes('|'));
-    for (const line of tableLines) {
-      if (line.includes('---')) continue; // Skip separator lines
-      const parts = line.split('|').map(p => p.trim()).filter(p => p);
-      if (parts.length >= 3) {
-        apps.push({
-          name: parts[0] || '',
-          bundleId: parts[1] || '',
-          version: parts[2] || '',
-          icon: ''
-        });
       }
     }
   }

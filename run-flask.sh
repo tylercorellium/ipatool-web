@@ -43,12 +43,24 @@ echo ""
 if [ ! -d "venv" ]; then
     echo "📦 Creating virtual environment..."
     python3 -m venv venv
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to create virtual environment"
+        echo "   Try: sudo apt install python3-venv"
+        exit 1
+    fi
     echo ""
 fi
 
 # Activate virtual environment
 echo "🔧 Activating virtual environment..."
-source venv/bin/activate
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+elif [ -f "venv/Scripts/activate" ]; then
+    source venv/Scripts/activate
+else
+    echo "❌ Virtual environment activation script not found"
+    exit 1
+fi
 echo ""
 
 # Install/update dependencies
@@ -95,7 +107,8 @@ if [ "$PORT" -lt 1024 ]; then
     echo "⚠️  Port $PORT requires root privileges"
     echo "   Running with sudo..."
     echo ""
-    sudo PORT=$PORT python3 app.py
+    # Use the virtual environment's Python with sudo
+    sudo PORT=$PORT "$(which python3)" app.py
 else
-    PORT=$PORT python3 app.py
+    python3 app.py
 fi

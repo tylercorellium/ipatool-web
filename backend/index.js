@@ -564,6 +564,10 @@ app.get('/api/manifest/:bundleId', (req, res) => {
 </dict>
 </plist>`;
 
+  console.log('[API] ========== MANIFEST RESPONSE ==========');
+  console.log(manifest);
+  console.log('[API] ============================================');
+
   res.setHeader('Content-Type', 'application/xml');
   res.send(manifest);
 });

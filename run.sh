@@ -63,19 +63,21 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Detect configured ports from environment or use defaults
-BACKEND_PORT="${BACKEND_PORT:-${PORT:-3001}}"
-FRONTEND_PORT="${PORT:-3000}"
+BACKEND_PORT="${BACKEND_PORT:-443}"
+FRONTEND_PORT="${FRONTEND_PORT:-8443}"
 
 echo "=========================================="
 echo "🚀 Starting servers..."
 echo "=========================================="
 echo ""
-echo "Backend will start on:  http://localhost:$BACKEND_PORT"
-echo "Frontend will start on: http://localhost:$FRONTEND_PORT"
+echo "Backend will start on:  https://localhost:$BACKEND_PORT"
+echo "Frontend will start on: https://localhost:$FRONTEND_PORT"
 echo ""
 echo "📝 Note: If you need custom ports, set these before running:"
-echo "   export BACKEND_PORT=<port>  # For backend"
-echo "   export PORT=<port>          # For frontend"
+echo "   export BACKEND_PORT=<port>  # For backend (default: 443)"
+echo "   export FRONTEND_PORT=<port> # For frontend (default: 8443)"
+echo ""
+echo "⚠️  Note: Port 443 requires sudo/root privileges"
 echo ""
 echo "Press Ctrl+C to stop all servers"
 echo ""
@@ -84,7 +86,7 @@ echo ""
 
 # Start backend in background but show output with prefix
 cd "$SCRIPT_DIR/backend"
-(npm start 2>&1 | sed 's/^/[BACKEND] /') &
+(BACKEND_PORT=$BACKEND_PORT npm start 2>&1 | sed 's/^/[BACKEND] /') &
 BACKEND_PID=$!
 
 # Give backend a moment to start
@@ -92,7 +94,7 @@ sleep 3
 
 # Start frontend in background but show output with prefix
 cd "$SCRIPT_DIR/ipatool-frontend"
-(npm start 2>&1 | sed 's/^/[FRONTEND] /') &
+(PORT=$FRONTEND_PORT npm start 2>&1 | sed 's/^/[FRONTEND] /') &
 FRONTEND_PID=$!
 
 # Wait for either process to exit

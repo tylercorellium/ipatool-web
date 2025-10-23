@@ -24,9 +24,10 @@ const corsOptions = {
       const hostname = originUrl.hostname;
 
       // Allow localhost, 127.0.0.1, and any IP address in local network
-      // Also allow .local domains for local network hostnames
+      // Also allow .local domains and ipatool-web FQDN
       if (hostname === 'localhost' ||
           hostname === '127.0.0.1' ||
+          hostname === 'ipatool-web' ||
           hostname.endsWith('.local') ||
           hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
           hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||

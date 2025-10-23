@@ -24,8 +24,10 @@ const corsOptions = {
       const hostname = originUrl.hostname;
 
       // Allow localhost, 127.0.0.1, and any IP address in local network
+      // Also allow .local domains for local network hostnames
       if (hostname === 'localhost' ||
           hostname === '127.0.0.1' ||
+          hostname.endsWith('.local') ||
           hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
           hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||
           hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/)) {

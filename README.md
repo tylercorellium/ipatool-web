@@ -51,10 +51,16 @@ cd backend
 npm start
 ```
 
-The backend server listens on port `3001` by default. Override it with:
+The backend server listens on port `443` by default (requires sudo). Override it with:
 
 ```bash
-BACKEND_PORT=3101 npm start
+BACKEND_PORT=3001 npm start
+```
+
+For manifest URLs (OTA installation), you can set a public hostname:
+
+```bash
+PUBLIC_HOSTNAME=ipatool-web:443 BACKEND_PORT=443 sudo npm start
 ```
 
 ### Start the Frontend Server
@@ -66,16 +72,16 @@ cd ipatool-frontend
 npm start
 ```
 
-The frontend application will open in your browser at `http://localhost:3000`.
+The frontend application will open in your browser at `https://localhost:8443`.
 If you move the backend to a different host or port, point the frontend at it with:
 
 ```bash
 REACT_APP_BACKEND_HOST=your.server.ip \
-REACT_APP_BACKEND_PORT=3101 \
+REACT_APP_BACKEND_PORT=443 \
 npm start
 ```
 
-Alternatively set `REACT_APP_API_URL` (for example `https://your.server.ip:3101/api`) to fully specify the backend URL.
+Alternatively set `REACT_APP_API_URL` (for example `https://ipatool-web:443/api`) to fully specify the backend URL.
 See `ipatool-frontend/.env.sample` for a template you can copy to `.env`.
 
 > **Tip:** When you serve the frontend over HTTPS, the backend must also be reachable via HTTPS (or the browser will block requests as mixed content). Use `setup-ssl.sh` to generate certs or run the frontend with `npm run start:http` during local development.
@@ -172,15 +178,19 @@ See `PRD.md` for planned features including:
 If authentication or API requests fail after changing ports:
 
 1. **Check browser console logs** for port mismatch warnings
-2. **Verify backend is running** on the expected port (default: 3001)
+2. **Verify backend is running** on the expected port (default: 443)
 3. **Configure frontend to match backend port**:
    ```bash
-   # If backend is on port 3101:
+   # If backend is on port 3001:
    cd ipatool-frontend
-   REACT_APP_BACKEND_PORT=3101 npm start
+   REACT_APP_BACKEND_PORT=3001 npm start
    ```
-4. **Check CORS errors**: The backend only accepts requests from localhost/127.0.0.1 and local network IPs
+4. **Check CORS errors**: The backend accepts requests from localhost/127.0.0.1, local network IPs, .local domains, and ipatool-web
 5. **Restart both servers** after changing port configurations
+6. **Set PUBLIC_HOSTNAME** if OTA installation URLs are incorrect:
+   ```bash
+   PUBLIC_HOSTNAME=ipatool-web:443 BACKEND_PORT=443 sudo npm start
+   ```
 
 **Frontend can't connect to backend:**
 - Open browser console (F12) and check for error messages

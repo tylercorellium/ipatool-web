@@ -10,6 +10,7 @@ const { PassThrough } = require('stream');
 const app = express();
 const port = Number(process.env.BACKEND_PORT || process.env.PORT || 3001);
 const redirectPort = Number(process.env.REDIRECT_PORT || 3000);
+const publicHostname = process.env.PUBLIC_HOSTNAME; // Optional: override hostname in manifest URLs
 
 // CORS configuration - dynamically allow frontend origin
 // Allow requests from localhost/127.0.0.1 on common ports, plus same-host requests
@@ -411,7 +412,7 @@ app.get('/api/manifest/:bundleId/debug', (req, res) => {
   }
 
   const protocol = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('host');
+  const host = publicHostname || req.get('host');
   const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
   const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
 
@@ -520,7 +521,7 @@ app.get('/api/manifest/:bundleId', (req, res) => {
   // Get the server URL from request headers
   // Force HTTPS for manifest URL as iOS requires it
   const protocol = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('host');
+  const host = publicHostname || req.get('host');
   const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
 
   const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
@@ -532,7 +533,7 @@ app.get('/api/manifest/:bundleId', (req, res) => {
   console.log('[API] Manifest URL:', manifestUrl);
   console.log('[API] Debug URL:', debugUrl);
   console.log('[API] IPA URL:', ipaUrl);
-  console.log('[API] Protocol detected:', protocol, 'Host:', host);
+  console.log('[API] Protocol detected:', protocol, 'Host:', host, 'Public hostname override:', publicHostname || 'none');
 
   // Generate manifest.plist
   const manifest = `<?xml version="1.0" encoding="UTF-8"?>

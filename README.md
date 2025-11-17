@@ -22,6 +22,23 @@ Before running this application, make sure you have:
 
 ## Installation
 
+### Option 1: Docker Deployment (Recommended for VPS)
+
+The easiest way to deploy on a VPS is using Docker. This automatically installs all dependencies including `ipatool`.
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd ipatool-web
+
+# Run the deployment script
+./deploy.sh
+```
+
+For detailed Docker deployment instructions, see [DOCKER-DEPLOY.md](DOCKER-DEPLOY.md).
+
+### Option 2: Manual Installation
+
 1. Clone the repository:
 ```bash
 git clone <repository-url>

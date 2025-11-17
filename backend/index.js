@@ -56,6 +56,7 @@ function executeIpatool(args, options = {}) {
     const ipatool = spawn('ipatool', args);
     let stdout = '';
     let stderr = '';
+    let twoFactorPrompted = false;
 
     if (options.streamResponse) {
       // For download operations, return the process for streaming
@@ -67,12 +68,64 @@ function executeIpatool(args, options = {}) {
       const output = data.toString();
       stdout += output;
       console.log('[ipatool stdout]:', output.trim());
+
+      // Detect 2FA prompt - check for various formats
+      const lowerOutput = output.toLowerCase();
+      const is2FAPrompt = lowerOutput.includes('2fa code') ||
+                          lowerOutput.includes('enter code') ||
+                          lowerOutput.includes('two-factor') ||
+                          lowerOutput.includes('enter 2fa');
+
+      if (is2FAPrompt && !twoFactorPrompted) {
+        twoFactorPrompted = true;
+        console.log('[ipatool] 2FA code prompt detected in output:', output.trim());
+
+        // If we have a 2FA code in options, provide it
+        if (options.twoFactorCode) {
+          console.log('[ipatool] Sending 2FA code to stdin:', options.twoFactorCode);
+          try {
+            ipatool.stdin.write(options.twoFactorCode + '\n');
+          } catch (err) {
+            console.error('[ipatool] Error writing to stdin:', err);
+          }
+        } else {
+          console.log('[ipatool] No 2FA code provided, killing process to prevent hang');
+          // Kill the process since we can't provide the code
+          ipatool.kill('SIGTERM');
+          reject(new Error('2FA_REQUIRED'));
+        }
+      }
     });
 
     ipatool.stderr.on('data', (data) => {
       const output = data.toString();
       stderr += output;
       console.log('[ipatool stderr]:', output.trim());
+
+      // Also check stderr for 2FA prompts
+      const lowerOutput = output.toLowerCase();
+      const is2FAPrompt = lowerOutput.includes('2fa code') ||
+                          lowerOutput.includes('enter code') ||
+                          lowerOutput.includes('two-factor') ||
+                          lowerOutput.includes('enter 2fa');
+
+      if (is2FAPrompt && !twoFactorPrompted) {
+        twoFactorPrompted = true;
+        console.log('[ipatool] 2FA code prompt detected in stderr:', output.trim());
+
+        if (options.twoFactorCode) {
+          console.log('[ipatool] Sending 2FA code to stdin:', options.twoFactorCode);
+          try {
+            ipatool.stdin.write(options.twoFactorCode + '\n');
+          } catch (err) {
+            console.error('[ipatool] Error writing to stdin:', err);
+          }
+        } else {
+          console.log('[ipatool] No 2FA code provided, killing process');
+          ipatool.kill('SIGTERM');
+          reject(new Error('2FA_REQUIRED'));
+        }
+      }
     });
 
     ipatool.on('close', (code) => {
@@ -80,7 +133,12 @@ function executeIpatool(args, options = {}) {
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
-        reject(new Error(`ipatool exited with code ${code}: ${stderr}`));
+        // Check if 2FA was required
+        if (twoFactorPrompted || stderr.includes('2FA') || stderr.includes('two-factor')) {
+          reject(new Error('2FA_REQUIRED'));
+        } else {
+          reject(new Error(`ipatool exited with code ${code}: ${stderr}`));
+        }
       }
     });
 
@@ -111,12 +169,15 @@ app.post('/api/auth/login', async (req, res) => {
     // Build ipatool auth command with file-based keychain for headless environments
     const args = ['auth', 'login', '--email', email, '--password', password, '--keychain-passphrase', 'password'];
 
+    // Pass 2FA code ONLY via stdin (--code flag not supported)
+    const options = {};
     if (code) {
-      args.push('--code', code);
+      options.twoFactorCode = code;
+      console.log('[API] 2FA code provided, will send via stdin if prompted');
     }
 
     console.log('[API] Attempting authentication...');
-    const result = await executeIpatool(args);
+    const result = await executeIpatool(args, options);
 
     // Check if 2FA is required
     if (result.stderr.includes('two-factor') || result.stderr.includes('2FA')) {
@@ -136,6 +197,18 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (error) {
     console.error('[API] Authentication error:', error.message);
+
+    // Check if 2FA is required
+    if (error.message === '2FA_REQUIRED') {
+      console.log('[API] Sending 2FA required response to frontend');
+      return res.json({
+        success: false,
+        requiresTwoFactor: true,
+        message: 'Two-factor authentication code required'
+      });
+    }
+
+    console.log('[API] Sending authentication failed response');
     res.status(401).json({
       error: 'Authentication failed',
       details: error.message
@@ -656,7 +729,10 @@ app.get('/ssl/cert.pem', (req, res) => {
 });
 
 // Check if SSL certificates exist
-const sslDir = path.join(__dirname, '..', 'ssl');
+// In Docker, SSL is mounted at /app/ssl, locally it's at ../ssl
+const sslDir = fs.existsSync(path.join(__dirname, 'ssl'))
+  ? path.join(__dirname, 'ssl')
+  : path.join(__dirname, '..', 'ssl');
 const certPath = path.join(sslDir, 'cert.pem');
 const keyPath = path.join(sslDir, 'key.pem');
 

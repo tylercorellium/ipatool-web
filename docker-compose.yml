@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ipatool-backend
+    restart: unless-stopped
+    ports:
+      - "443:443"    # HTTPS port
+      - "4000:4000"  # HTTP redirect port
+    environment:
+      - BACKEND_PORT=443
+      - REDIRECT_PORT=4000
+      - PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-ipatool-web:443}
+      - NODE_ENV=production
+    volumes:
+      # Mount SSL certificates (will be generated or provided)
+      - ./ssl:/app/ssl:ro
+      # Mount /tmp for IPA file storage (ephemeral)
+      - ipatool-tmp:/tmp
+    networks:
+      - ipatool-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:443/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./ipatool-frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_BACKEND_HOST=${REACT_APP_BACKEND_HOST:-localhost}
+        - REACT_APP_BACKEND_PORT=${REACT_APP_BACKEND_PORT:-443}
+    container_name: ipatool-frontend
+    restart: unless-stopped
+    ports:
+      - "8443:8443"  # HTTPS port
+      - "80:80"      # HTTP port (redirects to HTTPS)
+    volumes:
+      # Mount SSL certificates (same as backend)
+      - ./ssl:/etc/nginx/ssl:ro
+    networks:
+      - ipatool-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  ipatool-network:
+    driver: bridge
+
+volumes:
+  ipatool-tmp:
+    driver: local

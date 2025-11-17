@@ -20,6 +20,13 @@ echo ""
 if [ -f "$SSL_DIR/cert.pem" ] && [ -f "$SSL_DIR/key.pem" ]; then
     echo "⚠️  SSL certificates already exist!"
     echo ""
+
+    # Skip prompt if AUTO_GENERATE is set or FORCE_REGENERATE is set
+    if [ "$AUTO_GENERATE" = "true" ] || [ "$FORCE_REGENERATE" = "true" ]; then
+        echo "Keeping existing certificates."
+        exit 0
+    fi
+
     read -p "Do you want to regenerate them? (y/N): " -n 1 -r
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -32,14 +39,34 @@ fi
 
 # Get server IP address
 echo "🔍 Detecting server IP address..."
-SERVER_IP=$(hostname -I | awk '{print $1}')
+# Try multiple methods to get IP address (works on Linux and macOS)
+if command -v hostname &> /dev/null && hostname -I &> /dev/null; then
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+elif command -v ip &> /dev/null; then
+    SERVER_IP=$(ip route get 1 2>/dev/null | awk '{print $7}' | head -n1)
+elif command -v ifconfig &> /dev/null; then
+    SERVER_IP=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -n1)
+else
+    SERVER_IP="127.0.0.1"
+fi
+
+# Fallback to localhost if no IP found
+if [ -z "$SERVER_IP" ]; then
+    SERVER_IP="127.0.0.1"
+fi
+
 echo "   Detected IP: $SERVER_IP"
 echo ""
 
-# Prompt for custom domain (optional)
-read -p "Enter domain name (or press Enter to use IP address): " DOMAIN
-if [ -z "$DOMAIN" ]; then
-    DOMAIN="$SERVER_IP"
+# Prompt for custom domain (optional) - skip if AUTO_GENERATE is set
+if [ "$AUTO_GENERATE" = "true" ]; then
+    DOMAIN="${DOMAIN:-localhost}"
+    echo "🤖 Auto-generating certificate for: $DOMAIN"
+else
+    read -p "Enter domain name (or press Enter to use localhost): " DOMAIN
+    if [ -z "$DOMAIN" ]; then
+        DOMAIN="localhost"
+    fi
 fi
 
 echo ""

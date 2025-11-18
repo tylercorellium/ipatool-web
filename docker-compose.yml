@@ -30,12 +30,7 @@ services:
       start_period: 40s
 
   frontend:
-    build:
-      context: ./ipatool-frontend
-      dockerfile: Dockerfile
-      args:
-        - REACT_APP_BACKEND_HOST=${REACT_APP_BACKEND_HOST:-localhost}
-        - REACT_APP_BACKEND_PORT=${REACT_APP_BACKEND_PORT:-443}
+    image: tylercorellium/ipatool-web:latest
     container_name: ipatool-frontend
     restart: unless-stopped
     ports:

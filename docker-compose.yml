@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: tylercorellium/ipatool-backend:latest
     container_name: ipatool-backend
     restart: unless-stopped
     ports:

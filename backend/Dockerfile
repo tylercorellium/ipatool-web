@@ -29,12 +29,8 @@ RUN npm ci --only=production
 # Copy application code
 COPY . .
 
-# Create directory for SSL certificates (optional)
-RUN mkdir -p /app/ssl
+# Expose HTTP port (SSL terminated at nginx reverse proxy)
+EXPOSE 3001
 
-# Expose default backend port
-EXPOSE 443
-EXPOSE 4000
-
-# Start the backend server (use node directly for production, not nodemon)
+# Start the backend server
 CMD ["node", "index.js"]

@@ -25,7 +25,10 @@ services:
       start_period: 40s
 
   frontend:
-    build: ./ipatool-frontend
+    build:
+      context: ./ipatool-frontend
+      args:
+        - REACT_APP_API_URL=https://apps.pwndarw.in/api
     container_name: ipatool-frontend
     restart: unless-stopped
     ports:

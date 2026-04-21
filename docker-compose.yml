@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build: ./backend
+    image: tylercorellium/ipatool-backend:latest
     container_name: ipatool-backend
     restart: unless-stopped
     ports:
@@ -25,10 +25,7 @@ services:
       start_period: 40s
 
   frontend:
-    build:
-      context: ./ipatool-frontend
-      args:
-        - REACT_APP_API_URL=https://apps.pwndarw.in/api
+    image: tylercorellium/ipatool-web:latest
     container_name: ipatool-frontend
     restart: unless-stopped
     ports:

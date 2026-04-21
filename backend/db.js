@@ -52,6 +52,9 @@ const stmts = {
   listDownloads: db.prepare(
     'SELECT * FROM downloads WHERE account_id = ? ORDER BY downloaded_at DESC'
   ),
+  downloadCounts: db.prepare(
+    'SELECT account_id, COUNT(*) AS count FROM downloads GROUP BY account_id'
+  ),
 };
 
 function findOrCreateAccountByEmail(email) {
@@ -99,6 +102,13 @@ function listDownloads(accountId) {
   return stmts.listDownloads.all(accountId);
 }
 
+function downloadCountsByAccount() {
+  const rows = stmts.downloadCounts.all();
+  const map = Object.create(null);
+  for (const r of rows) map[r.account_id] = r.count;
+  return map;
+}
+
 module.exports = {
   db,
   findOrCreateAccountByEmail,
@@ -109,4 +119,5 @@ module.exports = {
   deleteAccount,
   recordDownload,
   listDownloads,
+  downloadCountsByAccount,
 };

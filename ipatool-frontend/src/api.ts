@@ -1,5 +1,13 @@
 import axios from 'axios';
-import { AuthCredentials, AuthResponse, AuthStatusResponse, SearchResponse } from './types';
+import {
+  AuthCredentials,
+  AuthResponse,
+  AuthStatusResponse,
+  AccountsResponse,
+  SwitchAccountResponse,
+  DeleteAccountResponse,
+  SearchResponse,
+} from './types';
 
 // Backend uses a signed cookie to identify the active account; browsers only
 // send cookies on cross-origin requests when withCredentials is set.
@@ -96,6 +104,29 @@ export const api = {
 
   async downloadBundle(): Promise<Blob> {
     const response = await axios.get(`${API_BASE_URL}/downloadme`, { responseType: 'blob' });
+    return response.data;
+  },
+
+  async logout(): Promise<void> {
+    await axios.post(`${API_BASE_URL}/auth/logout`);
+  },
+
+  async listAccounts(): Promise<AccountsResponse> {
+    const response = await axios.get(`${API_BASE_URL}/accounts`);
+    return response.data;
+  },
+
+  async switchAccount(id: string): Promise<SwitchAccountResponse> {
+    const response = await axios.post(`${API_BASE_URL}/accounts/switch`, { id });
+    return response.data;
+  },
+
+  async renameAccount(id: string, nickname: string | null): Promise<void> {
+    await axios.patch(`${API_BASE_URL}/accounts/${id}`, { nickname });
+  },
+
+  async deleteAccount(id: string): Promise<DeleteAccountResponse> {
+    const response = await axios.delete(`${API_BASE_URL}/accounts/${id}`);
     return response.data;
   },
 

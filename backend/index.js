@@ -11,13 +11,18 @@ const {
   findOrCreateAccountByEmail,
   touchAccount,
   getAccountById,
+  listAccounts,
+  renameAccount,
+  deleteAccount,
   recordDownload,
+  downloadCountsByAccount,
 } = require('./db');
 const {
   DATA_DIR,
   ensureBaseDirs,
   accountHome,
   accountDownloadsDir,
+  removeAccountFiles,
 } = require('./accounts');
 
 // An account has a downloadable bundle if /data/accounts/<id>/downloadme/
@@ -210,6 +215,94 @@ app.get('/api/auth/status', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie(ACTIVE_ACCOUNT_COOKIE, { ...COOKIE_OPTS, maxAge: undefined });
   res.json({ success: true });
+});
+
+// ---------- Accounts management ----------
+
+function serializeAccount(acct, { activeId, downloadCounts } = {}) {
+  return {
+    id: acct.id,
+    email: acct.email,
+    nickname: acct.nickname,
+    createdAt: acct.created_at,
+    lastUsedAt: acct.last_used_at,
+    active: activeId ? acct.id === activeId : false,
+    downloadCount: downloadCounts ? downloadCounts[acct.id] || 0 : 0,
+    hasDownloadBundle: hasDownloadBundle(acct.id),
+  };
+}
+
+app.get('/api/accounts', (req, res) => {
+  const activeId = req.signedCookies[ACTIVE_ACCOUNT_COOKIE];
+  const counts = downloadCountsByAccount();
+  const accounts = listAccounts().map((a) =>
+    serializeAccount(a, { activeId, downloadCounts: counts })
+  );
+  res.json({ accounts });
+});
+
+app.post('/api/accounts/switch', async (req, res) => {
+  const { id } = req.body;
+  const acct = getAccountById(id);
+  if (!acct) return res.status(404).json({ error: 'Account not found' });
+
+  res.cookie(ACTIVE_ACCOUNT_COOKIE, acct.id, COOKIE_OPTS);
+  touchAccount(acct.id);
+
+  // Verify the keychain is still valid so the frontend can route the user
+  // straight to re-auth if it expired, instead of surfacing a cryptic error
+  // on the next search/download.
+  let authenticated = false;
+  try {
+    await executeIpatool(
+      ['auth', 'info', '--keychain-passphrase', 'password'],
+      { accountId: acct.id }
+    );
+    authenticated = true;
+  } catch (err) {
+    console.log('[API] switched to', acct.id, '— keychain invalid:', err.message);
+  }
+
+  res.json({
+    authenticated,
+    account: {
+      id: acct.id,
+      email: acct.email,
+      nickname: acct.nickname,
+      hasDownloadBundle: hasDownloadBundle(acct.id),
+    },
+  });
+});
+
+app.patch('/api/accounts/:id', (req, res) => {
+  const { id } = req.params;
+  const acct = getAccountById(id);
+  if (!acct) return res.status(404).json({ error: 'Account not found' });
+
+  let { nickname } = req.body;
+  if (typeof nickname !== 'string') nickname = null;
+  else nickname = nickname.trim().slice(0, 80) || null;
+
+  renameAccount(id, nickname);
+  res.json({ success: true });
+});
+
+app.delete('/api/accounts/:id', (req, res) => {
+  const { id } = req.params;
+  const acct = getAccountById(id);
+  if (!acct) return res.status(404).json({ error: 'Account not found' });
+
+  const wasActive = req.signedCookies[ACTIVE_ACCOUNT_COOKIE] === id;
+
+  deleteAccount(id); // cascades to downloads via FK
+  removeAccountFiles(id);
+
+  if (wasActive) {
+    res.clearCookie(ACTIVE_ACCOUNT_COOKIE, { ...COOKIE_OPTS, maxAge: undefined });
+  }
+
+  console.log('[API] deleted account', id, acct.email, wasActive ? '(was active)' : '');
+  res.json({ success: true, deletedActive: wasActive });
 });
 
 // ---------- Per-account "downloadme" bundle ----------

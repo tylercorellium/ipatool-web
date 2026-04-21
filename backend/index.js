@@ -1,15 +1,15 @@
 const express = require('express');
 const cors = require('cors');
-const https = require('https');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { PassThrough } = require('stream');
 
 const app = express();
+
+// Trust proxy headers (nginx reverse proxy)
+app.set('trust proxy', 1);
+
 const port = Number(process.env.BACKEND_PORT || process.env.PORT || 3001);
-const redirectPort = Number(process.env.REDIRECT_PORT || 3000);
 const publicHostname = process.env.PUBLIC_HOSTNAME; // Optional: override hostname in manifest URLs
 
 // CORS configuration - dynamically allow frontend origin
@@ -24,11 +24,12 @@ const corsOptions = {
       const originUrl = new URL(origin);
       const hostname = originUrl.hostname;
 
-      // Allow localhost, 127.0.0.1, and any IP address in local network
-      // Also allow .local domains and ipatool-web FQDN
+      // Allow localhost, 127.0.0.1, local network, and production domains
       if (hostname === 'localhost' ||
           hostname === '127.0.0.1' ||
           hostname === 'ipatool-web' ||
+          hostname === 'apps.pwndarw.in' ||
+          hostname.endsWith('.pwndarw.in') ||
           hostname.endsWith('.local') ||
           hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
           hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||
@@ -714,70 +715,16 @@ app.get('/api/download-file/:filename', (req, res) => {
   res.status(404).json({ error: 'File not found' });
 });
 
-// Endpoint to serve SSL certificate for iOS device installation
-app.get('/ssl/cert.pem', (req, res) => {
-  const certPath = path.join(__dirname, '..', 'ssl', 'cert.pem');
-  if (fs.existsSync(certPath)) {
-    // Use application/x-x509-ca-cert for better iOS compatibility
-    // This triggers the certificate installation prompt on iOS
-    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
-    res.setHeader('Content-Disposition', 'attachment; filename="ipatool-web.crt"');
-    res.sendFile(certPath);
-  } else {
-    res.status(404).send('Certificate not found');
+// Start HTTP server (SSL terminated at nginx reverse proxy)
+app.listen(port, '0.0.0.0', () => {
+  console.log(`========================================`);
+  console.log(`HTTP Server running (behind proxy)`);
+  console.log(`========================================`);
+  console.log(`Server: http://0.0.0.0:${port}`);
+  console.log(`Local:  http://localhost:${port}`);
+  if (publicHostname) {
+    console.log(`Public: https://${publicHostname}`);
   }
+  console.log(`\nOTA Installation: ENABLED via proxy`);
+  console.log(`========================================`);
 });
-
-// Check if SSL certificates exist
-// In Docker, SSL is mounted at /app/ssl, locally it's at ../ssl
-const sslDir = fs.existsSync(path.join(__dirname, 'ssl'))
-  ? path.join(__dirname, 'ssl')
-  : path.join(__dirname, '..', 'ssl');
-const certPath = path.join(sslDir, 'cert.pem');
-const keyPath = path.join(sslDir, 'key.pem');
-
-const hasSSL = fs.existsSync(certPath) && fs.existsSync(keyPath);
-
-if (hasSSL) {
-  // Start HTTPS server
-  const httpsOptions = {
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath)
-  };
-
-  https.createServer(httpsOptions, app).listen(port, '0.0.0.0', () => {
-    console.log(`========================================`);
-    console.log(`🔒 HTTPS Server running`);
-    console.log(`========================================`);
-    console.log(`Server: https://0.0.0.0:${port}`);
-    console.log(`Local:  https://localhost:${port}`);
-    console.log(`\n📱 OTA Installation: ENABLED`);
-    console.log(`   iOS devices can install apps directly`);
-    console.log(`\n⚠️  Self-signed certificate requires trust:`);
-    console.log(`   Download cert: https://<your-ip>:${port}/ssl/cert.pem`);
-    console.log(`   Install on iOS and enable in Certificate Trust Settings`);
-    console.log(`========================================`);
-  });
-
-  // Also start HTTP server that redirects to HTTPS
-  http.createServer((req, res) => {
-    res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
-    res.end();
-  }).listen(redirectPort, '0.0.0.0', () => {
-    console.log(`🔓 HTTP redirect server on port ${redirectPort} -> HTTPS`);
-  });
-
-} else {
-  // Start HTTP server only
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`========================================`);
-    console.log(`🔓 HTTP Server running (no SSL)`);
-    console.log(`========================================`);
-    console.log(`Server: http://0.0.0.0:${port}`);
-    console.log(`Local:  http://localhost:${port}`);
-    console.log(`\n⚠️  OTA Installation: DISABLED`);
-    console.log(`   SSL certificate not found`);
-    console.log(`   Run './setup-ssl.sh' to generate certificates`);
-    console.log(`========================================`);
-  });
-}

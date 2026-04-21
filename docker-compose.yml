@@ -2,41 +2,38 @@ version: '3.8'
 
 services:
   backend:
-    image: tylercorellium/ipatool-backend:latest
+    build: ./backend
     container_name: ipatool-backend
     restart: unless-stopped
     ports:
-      - "443:443"    # HTTPS port
-      - "4000:4000"  # HTTP redirect port
+      # Only expose to localhost for nginx reverse proxy
+      - "127.0.0.1:3001:3001"
     environment:
-      - BACKEND_PORT=443
-      - REDIRECT_PORT=4000
-      - PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-ipatool-web:443}
+      - BACKEND_PORT=3001
+      - PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-apps.pwndarw.in}
       - NODE_ENV=production
     volumes:
-      # Mount SSL certificates (will be generated or provided)
-      - ./ssl:/app/ssl:ro
       # Mount /tmp for IPA file storage (ephemeral)
       - ipatool-tmp:/tmp
     networks:
       - ipatool-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:443/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   frontend:
-    image: tylercorellium/ipatool-web:latest
+    build:
+      context: ./ipatool-frontend
+      args:
+        - REACT_APP_API_URL=https://apps.pwndarw.in/api
     container_name: ipatool-frontend
     restart: unless-stopped
     ports:
-      - "8443:8443"  # HTTPS port
-      - "80:80"      # HTTP port (redirects to HTTPS)
-    volumes:
-      # Mount SSL certificates (same as backend)
-      - ./ssl:/etc/nginx/ssl:ro
+      # Only expose to localhost for nginx reverse proxy
+      - "127.0.0.1:3000:80"
     networks:
       - ipatool-network
     depends_on:

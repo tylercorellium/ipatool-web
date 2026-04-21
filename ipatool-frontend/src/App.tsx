@@ -13,12 +13,14 @@ import {
   CssBaseline
 } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
-import LogoutIcon from '@mui/icons-material/Logout';
 import SecurityIcon from '@mui/icons-material/Security';
 import FolderZipIcon from '@mui/icons-material/FolderZip';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LoginForm from './components/LoginForm';
 import SearchBar from './components/SearchBar';
 import AppList from './components/AppList';
+import AccountMenu from './components/AccountMenu';
+import AccountsManager from './components/AccountsManager';
 import { api, BACKEND_BASE_URL } from './api';
 import { App as AppType, AuthCredentials, Account } from './types';
 
@@ -36,6 +38,7 @@ const theme = createTheme({
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [credentials, setCredentials] = useState<AuthCredentials | null>(null);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,6 +49,9 @@ function App() {
   const [isHttps, setIsHttps] = useState(window.location.protocol === 'https:');
   const [isIOS, setIsIOS] = useState(false);
   const [isChrome, setIsChrome] = useState(false);
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [prefillEmail, setPrefillEmail] = useState<string | undefined>(undefined);
 
   console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
 
@@ -69,11 +75,23 @@ function App() {
         if (status.account) setAccount(status.account);
         // Set dummy credentials since we don't need them for search/download
         setCredentials({ email: '', password: '' });
+        refreshAccounts();
       }
       setIsCheckingAuth(false);
     };
     checkAuth();
   }, []);
+
+  const refreshAccounts = async () => {
+    try {
+      const resp = await api.listAccounts();
+      setAccounts(resp.accounts);
+      const active = resp.accounts.find((a) => a.active);
+      if (active) setAccount(active);
+    } catch (err: any) {
+      console.error('[App] Failed to load accounts:', err.message);
+    }
+  };
 
   const handleLogin = async (creds: AuthCredentials) => {
     console.log('[App] handleLogin called');
@@ -90,6 +108,10 @@ function App() {
         if (response.account) setAccount(response.account);
         setCredentials(creds);
         setRequiresTwoFactor(false);
+        setAddingAccount(false);
+        setPrefillEmail(undefined);
+        setApps([]);
+        refreshAccounts();
       } else if (response.requiresTwoFactor) {
         setRequiresTwoFactor(true);
         setCredentials(creds);
@@ -104,13 +126,66 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try { await api.logout(); } catch { /* clearing local state is enough */ }
     setIsAuthenticated(false);
     setAccount(null);
+    setAccounts([]);
     setCredentials(null);
     setRequiresTwoFactor(false);
+    setAddingAccount(false);
+    setPrefillEmail(undefined);
     setApps([]);
     setError(null);
+  };
+
+  const handleSwitchAccount = async (id: string) => {
+    try {
+      setError(null);
+      const resp = await api.switchAccount(id);
+      setApps([]);
+      if (resp.authenticated) {
+        setAccount(resp.account);
+        setIsAuthenticated(true);
+        setAddingAccount(false);
+        refreshAccounts();
+      } else {
+        // Keychain for this account expired — prefill login form.
+        setAccount(resp.account);
+        setPrefillEmail(resp.account.email);
+        setAddingAccount(true);
+        setIsAuthenticated(true); // stay in authed shell so menu is visible
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Switch failed');
+    }
+  };
+
+  const handleAddAccount = () => {
+    setAddingAccount(true);
+    setPrefillEmail(undefined);
+    setRequiresTwoFactor(false);
+    setError(null);
+  };
+
+  const handleCancelAdd = () => {
+    setAddingAccount(false);
+    setPrefillEmail(undefined);
+    setRequiresTwoFactor(false);
+    setError(null);
+  };
+
+  const handleAccountsChanged = async () => {
+    await refreshAccounts();
+    // If the active account was deleted, server clears the cookie — reflect.
+    const status = await api.checkAuthStatus();
+    if (!status.authenticated) {
+      setIsAuthenticated(false);
+      setAccount(null);
+      setAccounts([]);
+    } else if (status.account) {
+      setAccount(status.account);
+    }
   };
 
   const handleDownloadBundle = async () => {
@@ -192,9 +267,14 @@ function App() {
               </Button>
             )}
             {isAuthenticated && (
-              <Button color="inherit" startIcon={<LogoutIcon />} onClick={handleLogout}>
-                Logout
-              </Button>
+              <AccountMenu
+                activeAccount={account}
+                accounts={accounts}
+                onSwitch={handleSwitchAccount}
+                onAddAccount={handleAddAccount}
+                onManage={() => setManageOpen(true)}
+                onLogout={handleLogout}
+              />
             )}
           </Toolbar>
         </AppBar>
@@ -247,6 +327,31 @@ function App() {
               isLoading={isLoading}
               error={error}
             />
+          ) : addingAccount ? (
+            <Box>
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={handleCancelAdd}
+                sx={{ mb: 2 }}
+              >
+                Back to {account ? (account.nickname || account.email) : 'account'}
+              </Button>
+              <Typography variant="h5" gutterBottom>
+                {prefillEmail ? 'Sign in again' : 'Add another account'}
+              </Typography>
+              {prefillEmail && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  This account's session expired. Enter the password to re-authenticate.
+                </Typography>
+              )}
+              <LoginForm
+                onLogin={handleLogin}
+                requiresTwoFactor={requiresTwoFactor}
+                isLoading={isLoading}
+                error={error}
+                prefillEmail={prefillEmail}
+              />
+            </Box>
           ) : (
             <Box>
               <Typography variant="h4" component="h1" gutterBottom>
@@ -274,6 +379,12 @@ function App() {
             </Box>
           )}
         </Container>
+
+        <AccountsManager
+          open={manageOpen}
+          onClose={() => setManageOpen(false)}
+          onChanged={handleAccountsChanged}
+        />
       </Box>
     </ThemeProvider>
   );

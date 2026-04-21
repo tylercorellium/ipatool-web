@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TextField, Button, Box, Alert, CircularProgress, Typography, Paper } from '@mui/material';
 import { AuthCredentials } from '../types';
 
@@ -7,12 +7,17 @@ interface LoginFormProps {
   requiresTwoFactor: boolean;
   isLoading: boolean;
   error: string | null;
+  prefillEmail?: string;
 }
 
-const LoginForm: React.FC<LoginFormProps> = ({ onLogin, requiresTwoFactor, isLoading, error }) => {
-  const [email, setEmail] = useState('');
+const LoginForm: React.FC<LoginFormProps> = ({ onLogin, requiresTwoFactor, isLoading, error, prefillEmail }) => {
+  const [email, setEmail] = useState(prefillEmail || '');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+
+  useEffect(() => {
+    if (prefillEmail) setEmail(prefillEmail);
+  }, [prefillEmail]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

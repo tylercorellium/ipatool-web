@@ -52,6 +52,8 @@ const stmts = {
   listDownloads: db.prepare(
     'SELECT * FROM downloads WHERE account_id = ? ORDER BY downloaded_at DESC'
   ),
+  getDownload: db.prepare('SELECT * FROM downloads WHERE id = ?'),
+  deleteDownload: db.prepare('DELETE FROM downloads WHERE id = ?'),
   downloadCounts: db.prepare(
     'SELECT account_id, COUNT(*) AS count FROM downloads GROUP BY account_id'
   ),
@@ -102,6 +104,14 @@ function listDownloads(accountId) {
   return stmts.listDownloads.all(accountId);
 }
 
+function getDownloadById(id) {
+  return stmts.getDownload.get(id);
+}
+
+function deleteDownload(id) {
+  stmts.deleteDownload.run(id);
+}
+
 function downloadCountsByAccount() {
   const rows = stmts.downloadCounts.all();
   const map = Object.create(null);
@@ -119,5 +129,7 @@ module.exports = {
   deleteAccount,
   recordDownload,
   listDownloads,
+  getDownloadById,
+  deleteDownload,
   downloadCountsByAccount,
 };

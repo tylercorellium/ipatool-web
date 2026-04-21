@@ -11,12 +11,24 @@ export interface AuthCredentials {
   code?: string;
 }
 
+export interface Account {
+  id: string;
+  email: string;
+  hasDownloadBundle?: boolean;
+}
+
 export interface AuthResponse {
   success: boolean;
   requiresTwoFactor?: boolean;
   sessionToken?: string;
   message?: string;
   error?: string;
+  account?: Account;
+}
+
+export interface AuthStatusResponse {
+  authenticated: boolean;
+  account?: Account;
 }
 
 export interface SearchResponse {

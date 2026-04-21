@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AuthCredentials, AuthResponse, SearchResponse } from './types';
+import { AuthCredentials, AuthResponse, AuthStatusResponse, SearchResponse } from './types';
 
 // Backend uses a signed cookie to identify the active account; browsers only
 // send cookies on cross-origin requests when withCredentials is set.
@@ -82,7 +82,7 @@ export const API_BASE_URL = resolvedApiBase || `${BACKEND_BASE_URL}/api`;
 console.log('[API] Using backend URL:', API_BASE_URL);
 
 export const api = {
-  async checkAuthStatus(): Promise<{ authenticated: boolean }> {
+  async checkAuthStatus(): Promise<AuthStatusResponse> {
     console.log('[API] Checking authentication status...');
     try {
       const response = await axios.get(`${API_BASE_URL}/auth/status`);
@@ -92,6 +92,11 @@ export const api = {
       console.error('[API] Auth status check error:', error.message);
       return { authenticated: false };
     }
+  },
+
+  async downloadBundle(): Promise<Blob> {
+    const response = await axios.get(`${API_BASE_URL}/downloadme`, { responseType: 'blob' });
+    return response.data;
   },
 
   async login(credentials: AuthCredentials): Promise<AuthResponse> {

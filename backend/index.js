@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const archiver = require('archiver');
 
 const { executeIpatool } = require('./ipatool');
 const {
@@ -15,8 +16,22 @@ const {
 const {
   DATA_DIR,
   ensureBaseDirs,
+  accountHome,
   accountDownloadsDir,
 } = require('./accounts');
+
+// An account has a downloadable bundle if /data/accounts/<id>/downloadme/
+// exists as a non-empty directory. Drop files there on the VPS to enable.
+function hasDownloadBundle(accountId) {
+  const dir = path.join(accountHome(accountId), 'downloadme');
+  try {
+    const stat = fs.statSync(dir);
+    if (!stat.isDirectory()) return false;
+    return fs.readdirSync(dir).length > 0;
+  } catch {
+    return false;
+  }
+}
 
 ensureBaseDirs();
 
@@ -145,7 +160,11 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({
       success: true,
       message: 'Authentication successful',
-      account: { id: account.id, email: account.email },
+      account: {
+        id: account.id,
+        email: account.email,
+        hasDownloadBundle: hasDownloadBundle(account.id),
+      },
     });
   } catch (error) {
     console.error('[API] Authentication error:', error.message);
@@ -176,7 +195,11 @@ app.get('/api/auth/status', async (req, res) => {
     );
     res.json({
       authenticated: true,
-      account: { id: acct.id, email: acct.email },
+      account: {
+        id: acct.id,
+        email: acct.email,
+        hasDownloadBundle: hasDownloadBundle(acct.id),
+      },
     });
   } catch (error) {
     console.log('[API] auth/status — keychain not valid for', acct.id, ':', error.message);
@@ -187,6 +210,36 @@ app.get('/api/auth/status', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie(ACTIVE_ACCOUNT_COOKIE, { ...COOKIE_OPTS, maxAge: undefined });
   res.json({ success: true });
+});
+
+// ---------- Per-account "downloadme" bundle ----------
+// Streams a zip of /data/accounts/<id>/downloadme/ for whichever account is
+// active. Presence of the folder on the VPS is the feature flag — no email
+// hardcoding, no per-deploy config.
+
+app.get('/api/downloadme', requireActiveAccount, (req, res) => {
+  const dir = path.join(accountHome(req.account.id), 'downloadme');
+  try {
+    const stat = fs.statSync(dir);
+    if (!stat.isDirectory()) return res.status(404).json({ error: 'No bundle available' });
+  } catch {
+    return res.status(404).json({ error: 'No bundle available' });
+  }
+
+  const safeEmail = req.account.email.replace(/[^a-z0-9.-]/gi, '_');
+  const zipName = `downloadme-${safeEmail}.zip`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('[API] downloadme archive error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to build zip' });
+  });
+  archive.pipe(res);
+  archive.directory(dir, false);
+  archive.finalize();
 });
 
 // ---------- Search ----------

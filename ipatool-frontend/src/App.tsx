@@ -15,11 +15,12 @@ import {
 import AppleIcon from '@mui/icons-material/Apple';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SecurityIcon from '@mui/icons-material/Security';
+import FolderZipIcon from '@mui/icons-material/FolderZip';
 import LoginForm from './components/LoginForm';
 import SearchBar from './components/SearchBar';
 import AppList from './components/AppList';
 import { api, BACKEND_BASE_URL } from './api';
-import { App as AppType, AuthCredentials } from './types';
+import { App as AppType, AuthCredentials, Account } from './types';
 
 const theme = createTheme({
   palette: {
@@ -34,6 +35,7 @@ const theme = createTheme({
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
   const [credentials, setCredentials] = useState<AuthCredentials | null>(null);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,6 +66,7 @@ function App() {
       if (status.authenticated) {
         console.log('[App] User already authenticated, skipping login');
         setIsAuthenticated(true);
+        if (status.account) setAccount(status.account);
         // Set dummy credentials since we don't need them for search/download
         setCredentials({ email: '', password: '' });
       }
@@ -84,6 +87,7 @@ function App() {
 
       if (response.success) {
         setIsAuthenticated(true);
+        if (response.account) setAccount(response.account);
         setCredentials(creds);
         setRequiresTwoFactor(false);
       } else if (response.requiresTwoFactor) {
@@ -102,10 +106,27 @@ function App() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setAccount(null);
     setCredentials(null);
     setRequiresTwoFactor(false);
     setApps([]);
     setError(null);
+  };
+
+  const handleDownloadBundle = async () => {
+    try {
+      const blob = await api.downloadBundle();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'downloadme.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Bundle download failed');
+    }
   };
 
   const handleSearch = async (query: string) => {
@@ -160,6 +181,16 @@ function App() {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               ipatool-web
             </Typography>
+            {isAuthenticated && account?.hasDownloadBundle && (
+              <Button
+                color="inherit"
+                startIcon={<FolderZipIcon />}
+                onClick={handleDownloadBundle}
+                sx={{ mr: 1 }}
+              >
+                Bundle
+              </Button>
+            )}
             {isAuthenticated && (
               <Button color="inherit" startIcon={<LogoutIcon />} onClick={handleLogout}>
                 Logout

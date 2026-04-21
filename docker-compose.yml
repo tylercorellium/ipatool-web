@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     ports:
       # Only expose to localhost for nginx reverse proxy
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3002:80"
     networks:
       - ipatool-network
     depends_on:

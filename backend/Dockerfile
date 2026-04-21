@@ -7,7 +7,11 @@ RUN apk add --no-cache \
     musl-dev
 
 # Build and install ipatool from source
-RUN git clone https://github.com/majd/ipatool.git /tmp/ipatool && \
+# Pinned to v2.3.0 — master after 2026-04-14 has a context-key regression
+# (cmd/auth.go reads "interactive" with a plain string key while root.go
+# writes it with a typed key, causing a nil-interface panic on login).
+ARG IPATOOL_VERSION=v2.3.0
+RUN git clone --depth 1 --branch ${IPATOOL_VERSION} https://github.com/majd/ipatool.git /tmp/ipatool && \
     cd /tmp/ipatool && \
     go build -o ipatool main.go && \
     mv ipatool /usr/local/bin/ && \

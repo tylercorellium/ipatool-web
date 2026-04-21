@@ -1,634 +1,364 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+
+const { executeIpatool } = require('./ipatool');
+const {
+  findOrCreateAccountByEmail,
+  touchAccount,
+  getAccountById,
+  recordDownload,
+} = require('./db');
+const {
+  DATA_DIR,
+  ensureBaseDirs,
+  accountDownloadsDir,
+} = require('./accounts');
+
+ensureBaseDirs();
 
 const app = express();
-
-// Trust proxy headers (nginx reverse proxy)
 app.set('trust proxy', 1);
 
 const port = Number(process.env.BACKEND_PORT || process.env.PORT || 3001);
-const publicHostname = process.env.PUBLIC_HOSTNAME; // Optional: override hostname in manifest URLs
+const publicHostname = process.env.PUBLIC_HOSTNAME;
 
-// CORS configuration - dynamically allow frontend origin
-// Allow requests from localhost/127.0.0.1 on common ports, plus same-host requests
+// Cookie signing secret — persisted under /data so it survives restarts
+// and is stable across backend container recreations.
+const SECRET_PATH = path.join(DATA_DIR, 'cookie-secret');
+let cookieSecret;
+try {
+  cookieSecret = fs.readFileSync(SECRET_PATH, 'utf8').trim();
+} catch {
+  cookieSecret = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(SECRET_PATH, cookieSecret, { mode: 0o600 });
+}
+
+const ACTIVE_ACCOUNT_COOKIE = 'ipatool_active_account';
+const COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  signed: true,
+  maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+};
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
     if (!origin) return callback(null, true);
-
-    // Parse the origin to check if it's from localhost/127.0.0.1
     try {
-      const originUrl = new URL(origin);
-      const hostname = originUrl.hostname;
-
-      // Allow localhost, 127.0.0.1, local network, and production domains
-      if (hostname === 'localhost' ||
-          hostname === '127.0.0.1' ||
-          hostname === 'ipatool-web' ||
-          hostname === 'apps.pwndarw.in' ||
-          hostname.endsWith('.pwndarw.in') ||
-          hostname.endsWith('.local') ||
-          hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
-          hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||
-          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/)) {
+      const hostname = new URL(origin).hostname;
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === 'ipatool-web' ||
+        hostname === 'apps.pwndarw.in' ||
+        hostname.endsWith('.pwndarw.in') ||
+        hostname.endsWith('.local') ||
+        hostname.match(/^192\.168\.\d{1,3}\.\d{1,3}$/) ||
+        hostname.match(/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) ||
+        hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/)
+      ) {
         return callback(null, true);
       }
-    } catch (e) {
+    } catch {
       console.warn('[CORS] Invalid origin:', origin);
     }
-
-    // Reject other origins
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
+app.use(cookieParser(cookieSecret));
 app.use(express.json());
 
-// Helper function to execute ipatool commands
-function executeIpatool(args, options = {}) {
-  return new Promise((resolve, reject) => {
-    console.log('[ipatool] Executing command:', 'ipatool', args.map(arg => arg.includes('@') || arg.length > 20 ? '***' : arg).join(' '));
-
-    const ipatool = spawn('ipatool', args);
-    let stdout = '';
-    let stderr = '';
-    let twoFactorPrompted = false;
-
-    if (options.streamResponse) {
-      // For download operations, return the process for streaming
-      resolve(ipatool);
-      return;
-    }
-
-    ipatool.stdout.on('data', (data) => {
-      const output = data.toString();
-      stdout += output;
-      console.log('[ipatool stdout]:', output.trim());
-
-      // Detect 2FA prompt - check for various formats
-      const lowerOutput = output.toLowerCase();
-      const is2FAPrompt = lowerOutput.includes('2fa code') ||
-                          lowerOutput.includes('enter code') ||
-                          lowerOutput.includes('two-factor') ||
-                          lowerOutput.includes('enter 2fa');
-
-      if (is2FAPrompt && !twoFactorPrompted) {
-        twoFactorPrompted = true;
-        console.log('[ipatool] 2FA code prompt detected in output:', output.trim());
-
-        // If we have a 2FA code in options, provide it
-        if (options.twoFactorCode) {
-          console.log('[ipatool] Sending 2FA code to stdin:', options.twoFactorCode);
-          try {
-            ipatool.stdin.write(options.twoFactorCode + '\n');
-          } catch (err) {
-            console.error('[ipatool] Error writing to stdin:', err);
-          }
-        } else {
-          console.log('[ipatool] No 2FA code provided, killing process to prevent hang');
-          // Kill the process since we can't provide the code
-          ipatool.kill('SIGTERM');
-          reject(new Error('2FA_REQUIRED'));
-        }
-      }
-    });
-
-    ipatool.stderr.on('data', (data) => {
-      const output = data.toString();
-      stderr += output;
-      console.log('[ipatool stderr]:', output.trim());
-
-      // Also check stderr for 2FA prompts
-      const lowerOutput = output.toLowerCase();
-      const is2FAPrompt = lowerOutput.includes('2fa code') ||
-                          lowerOutput.includes('enter code') ||
-                          lowerOutput.includes('two-factor') ||
-                          lowerOutput.includes('enter 2fa');
-
-      if (is2FAPrompt && !twoFactorPrompted) {
-        twoFactorPrompted = true;
-        console.log('[ipatool] 2FA code prompt detected in stderr:', output.trim());
-
-        if (options.twoFactorCode) {
-          console.log('[ipatool] Sending 2FA code to stdin:', options.twoFactorCode);
-          try {
-            ipatool.stdin.write(options.twoFactorCode + '\n');
-          } catch (err) {
-            console.error('[ipatool] Error writing to stdin:', err);
-          }
-        } else {
-          console.log('[ipatool] No 2FA code provided, killing process');
-          ipatool.kill('SIGTERM');
-          reject(new Error('2FA_REQUIRED'));
-        }
-      }
-    });
-
-    ipatool.on('close', (code) => {
-      console.log('[ipatool] Process exited with code:', code);
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        // Check if 2FA was required
-        if (twoFactorPrompted || stderr.includes('2FA') || stderr.includes('two-factor')) {
-          reject(new Error('2FA_REQUIRED'));
-        } else {
-          reject(new Error(`ipatool exited with code ${code}: ${stderr}`));
-        }
-      }
-    });
-
-    ipatool.on('error', (error) => {
-      console.error('[ipatool] Failed to start process:', error);
-      reject(new Error(`Failed to start ipatool: ${error.message}`));
-    });
-  });
+// Resolve the account the current request is operating as, from the signed cookie.
+function activeAccount(req) {
+  const id = req.signedCookies[ACTIVE_ACCOUNT_COOKIE];
+  return getAccountById(id);
 }
 
-// Root endpoint
+function requireActiveAccount(req, res, next) {
+  const acct = activeAccount(req);
+  if (!acct) return res.status(401).json({ error: 'No active account' });
+  req.account = acct;
+  touchAccount(acct.id);
+  next();
+}
+
 app.get('/', (req, res) => {
   res.send('ipatool-web backend is running!');
 });
 
-// Authentication endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ---------- Authentication ----------
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, code } = req.body;
 
-  console.log('[API] POST /api/auth/login - Email:', email ? email.substring(0, 3) + '***' : 'none', 'Has password:', !!password, 'Has 2FA code:', !!code);
+  console.log(
+    '[API] POST /api/auth/login - Email:',
+    email ? email.substring(0, 3) + '***' : 'none',
+    'Has password:', !!password,
+    'Has 2FA code:', !!code
+  );
 
   if (!email || !password) {
-    console.log('[API] Missing credentials');
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
+  // Create (or find) the account record *before* login so we have a stable
+  // HOME dir to run ipatool under. If login fails, the account row stays —
+  // that's fine; it's just an email. A retry reuses it.
+  const account = findOrCreateAccountByEmail(email);
+
   try {
-    // Build ipatool auth command with file-based keychain for headless environments
-    const args = ['auth', 'login', '--email', email, '--password', password, '--keychain-passphrase', 'password'];
+    const args = [
+      'auth', 'login',
+      '--email', email,
+      '--password', password,
+      '--keychain-passphrase', 'password',
+    ];
+    const options = { accountId: account.id };
+    if (code) options.twoFactorCode = code;
 
-    // Pass 2FA code ONLY via stdin (--code flag not supported)
-    const options = {};
-    if (code) {
-      options.twoFactorCode = code;
-      console.log('[API] 2FA code provided, will send via stdin if prompted');
-    }
-
-    console.log('[API] Attempting authentication...');
     const result = await executeIpatool(args, options);
 
-    // Check if 2FA is required
     if (result.stderr.includes('two-factor') || result.stderr.includes('2FA')) {
-      console.log('[API] 2FA required');
       return res.json({
         success: false,
         requiresTwoFactor: true,
-        message: 'Two-factor authentication code required'
+        message: 'Two-factor authentication code required',
       });
     }
 
-    console.log('[API] Authentication successful');
-    // Note: Session state is managed by ipatool's keychain, not server-side sessions
+    touchAccount(account.id);
+    res.cookie(ACTIVE_ACCOUNT_COOKIE, account.id, COOKIE_OPTS);
+
+    console.log('[API] Authentication successful for account', account.id);
     res.json({
       success: true,
-      message: 'Authentication successful'
+      message: 'Authentication successful',
+      account: { id: account.id, email: account.email },
     });
   } catch (error) {
     console.error('[API] Authentication error:', error.message);
-
-    // Check if 2FA is required
     if (error.message === '2FA_REQUIRED') {
-      console.log('[API] Sending 2FA required response to frontend');
       return res.json({
         success: false,
         requiresTwoFactor: true,
-        message: 'Two-factor authentication code required'
+        message: 'Two-factor authentication code required',
       });
     }
-
-    console.log('[API] Sending authentication failed response');
     res.status(401).json({
       error: 'Authentication failed',
-      details: error.message
+      details: error.message,
     });
   }
 });
 
-// Search endpoint
-app.post('/api/search', async (req, res) => {
-  const { query } = req.body;
+app.get('/api/auth/status', async (req, res) => {
+  const acct = activeAccount(req);
+  if (!acct) {
+    return res.json({ authenticated: false, message: 'No active account' });
+  }
 
-  console.log('[API] POST /api/search - Query:', query);
+  try {
+    await executeIpatool(
+      ['auth', 'info', '--keychain-passphrase', 'password'],
+      { accountId: acct.id }
+    );
+    res.json({
+      authenticated: true,
+      account: { id: acct.id, email: acct.email },
+    });
+  } catch (error) {
+    console.log('[API] auth/status — keychain not valid for', acct.id, ':', error.message);
+    res.json({ authenticated: false, message: 'Session not valid' });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie(ACTIVE_ACCOUNT_COOKIE, { ...COOKIE_OPTS, maxAge: undefined });
+  res.json({ success: true });
+});
+
+// ---------- Search ----------
+
+app.post('/api/search', requireActiveAccount, async (req, res) => {
+  const { query } = req.body;
+  console.log('[API] POST /api/search - Query:', query, 'account:', req.account.id);
 
   if (!query) {
     return res.status(400).json({ error: 'Search query is required' });
   }
 
   try {
-    // Execute ipatool search - search uses stored credentials from auth
-    const args = ['search', query, '--keychain-passphrase', 'password', '--limit', '50'];
-    console.log('[API] Executing search...');
-    const result = await executeIpatool(args);
-
-    // Parse the output to extract app information
-    // ipatool typically outputs in a structured format
+    const result = await executeIpatool(
+      ['search', query, '--keychain-passphrase', 'password', '--limit', '50'],
+      { accountId: req.account.id }
+    );
     const apps = parseSearchResults(result.stdout);
     console.log('[API] Search found', apps.length, 'apps');
-
     res.json({ success: true, apps });
   } catch (error) {
     console.error('[API] Search error:', error.message);
-    res.status(500).json({
-      error: 'Search failed',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Search failed', details: error.message });
   }
 });
 
-// Download endpoint - returns metadata for OTA or direct download
-app.post('/api/download', async (req, res) => {
-  const { bundleId, directDownload } = req.body;
+// ---------- Download ----------
 
-  console.log('[API] POST /api/download - Bundle ID:', bundleId, 'Direct:', directDownload);
+app.post('/api/download', requireActiveAccount, async (req, res) => {
+  const { bundleId, directDownload } = req.body;
+  console.log(
+    '[API] POST /api/download - Bundle ID:', bundleId,
+    'Direct:', !!directDownload,
+    'Account:', req.account.id
+  );
 
   if (!bundleId) {
     return res.status(400).json({ error: 'Bundle ID is required' });
   }
 
+  const accountId = req.account.id;
+  const timestamp = Date.now();
+  const outputDir = path.join(accountDownloadsDir(accountId), String(timestamp));
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const args = [
+    'download',
+    '--bundle-identifier', bundleId,
+    '--keychain-passphrase', 'password',
+    '--output', outputDir,
+  ];
+
   try {
-    // Create a temporary output path
-    const timestamp = Date.now();
-    const outputDir = `/tmp/ipatool_${timestamp}`;
-    const fs = require('fs');
-    const path = require('path');
-
-    // Create the output directory
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    // Execute ipatool download - it will create a .ipa file in the output directory
-    const args = [
-      'download',
-      '--bundle-identifier', bundleId,
-      '--keychain-passphrase', 'password',
-      '--output', outputDir
-    ];
-
-    console.log('[API] Downloading IPA...');
     let result;
     try {
-      result = await executeIpatool(args);
+      result = await executeIpatool(args, { accountId });
     } catch (err) {
       // ipatool requires an App Store license before the first download of a
       // given app. Acquire the free license and retry once.
       if (err.message && err.message.includes('license is required')) {
         console.log('[API] License required — acquiring via ipatool purchase...');
-        await executeIpatool([
-          'purchase',
-          '--bundle-identifier', bundleId,
-          '--keychain-passphrase', 'password'
-        ]);
-        console.log('[API] License acquired, retrying download...');
-        result = await executeIpatool(args);
+        await executeIpatool(
+          ['purchase', '--bundle-identifier', bundleId, '--keychain-passphrase', 'password'],
+          { accountId }
+        );
+        result = await executeIpatool(args, { accountId });
       } else {
         throw err;
       }
     }
-    console.log('[API] Download command completed');
 
-    // Find the .ipa file in the output directory
     const files = fs.readdirSync(outputDir);
-    const ipaFile = files.find(f => f.endsWith('.ipa'));
-
-    if (!ipaFile) {
-      throw new Error('No .ipa file found after download');
-    }
+    const ipaFile = files.find((f) => f.endsWith('.ipa'));
+    if (!ipaFile) throw new Error('No .ipa file found after download');
 
     const ipaPath = path.join(outputDir, ipaFile);
-    console.log('[API] IPA file found:', ipaFile);
+    const stat = fs.statSync(ipaPath);
+    console.log('[API] IPA file found:', ipaFile, 'size:', stat.size);
 
-    // If direct download is requested, stream the file
+    recordDownload({
+      accountId,
+      bundleId,
+      appName: null,
+      version: null,
+      filename: ipaFile,
+      size: stat.size,
+    });
+
     if (directDownload) {
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${ipaFile}"`);
-
-      const fileStream = fs.createReadStream(ipaPath);
-
-      fileStream.on('error', (error) => {
+      const stream = fs.createReadStream(ipaPath);
+      stream.on('error', (error) => {
         console.error('[API] File stream error:', error);
         if (!res.headersSent) {
           res.status(500).json({ error: 'Failed to stream file' });
         }
       });
-
-      fileStream.on('end', () => {
-        console.log('[API] File stream completed');
-      });
-
-      fileStream.pipe(res);
-    } else {
-      // Return metadata for OTA installation
-      res.json({
-        success: true,
-        filename: ipaFile,
-        bundleId: bundleId,
-        downloadUrl: `/api/download-file/${ipaFile}`,
-        manifestUrl: `/api/manifest/${bundleId}`,
-        message: 'IPA ready for installation'
-      });
+      stream.pipe(res);
+      return;
     }
 
+    // URLs embed the account ID so iOS's OTA flow (which doesn't send cookies)
+    // can still resolve the right account's download dir.
+    res.json({
+      success: true,
+      filename: ipaFile,
+      bundleId,
+      downloadUrl: `/api/accounts/${accountId}/download-file/${encodeURIComponent(ipaFile)}`,
+      manifestUrl: `/api/accounts/${accountId}/manifest/${bundleId}`,
+      message: 'IPA ready for installation',
+    });
   } catch (error) {
     console.error('[API] Download error:', error.message);
     if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Download failed',
-        details: error.message
-      });
+      res.status(500).json({ error: 'Download failed', details: error.message });
     }
   }
 });
 
-// Helper function to strip ANSI color codes
-function stripAnsiCodes(str) {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+// ---------- OTA manifest + file serving (account-scoped, no cookie required) ----------
+
+function findIpaForAccount(accountId, bundleId) {
+  const dir = accountDownloadsDir(accountId);
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+
+  // Prefer a file whose name contains the bundleId; fall back to any .ipa.
+  let fallback = null;
+  for (const entry of entries) {
+    const subdir = path.join(dir, entry);
+    let stat;
+    try { stat = fs.statSync(subdir); } catch { continue; }
+    if (!stat.isDirectory()) continue;
+
+    const files = fs.readdirSync(subdir).filter((f) => f.endsWith('.ipa'));
+    for (const f of files) {
+      if (f.includes(bundleId)) return { dir: subdir, file: f };
+      if (!fallback) fallback = { dir: subdir, file: f };
+    }
+  }
+  return fallback;
 }
 
-// Helper function to parse search results
-function parseSearchResults(output) {
-  // Strip ANSI color codes first
-  output = stripAnsiCodes(output);
+function findIpaFileForAccount(accountId, filename) {
+  const dir = accountDownloadsDir(accountId);
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    const subdir = path.join(dir, entry);
+    let stat;
+    try { stat = fs.statSync(subdir); } catch { continue; }
+    if (!stat.isDirectory()) continue;
 
-  const apps = [];
-
-  // Try to find JSON in the output
-  // ipatool outputs logs like "5:42PM INF apps=[...] count=44"
-  const jsonMatch = output.match(/apps=(\[.*?\])\s+count=/);
-
-  if (jsonMatch) {
-    try {
-      const appsData = JSON.parse(jsonMatch[1]);
-      console.log('[Parse] Found', appsData.length, 'apps in JSON format');
-
-      // Convert ipatool format to our format
-      return appsData.map(app => ({
-        name: app.name || '',
-        bundleId: app.bundleID || '',
-        version: app.version || '',
-        icon: '' // ipatool doesn't provide icons in search
-      }));
-    } catch (error) {
-      console.error('[Parse] Failed to parse JSON:', error);
+    const files = fs.readdirSync(subdir);
+    if (files.includes(filename)) {
+      return path.join(subdir, filename);
     }
   }
-
-  // Fallback to line-by-line parsing if JSON parsing fails
-  const lines = output.split('\n').filter(line => line.trim());
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Look for lines that contain app information
-    const bundleIdMatch = line.match(/Bundle ID:\s*([^\s]+)/i) ||
-                         line.match(/([a-z0-9\.]+\.[a-z0-9\.]+)/i);
-    const nameMatch = line.match(/Name:\s*(.+?)(?:\s+Version:|$)/i);
-    const versionMatch = line.match(/Version:\s*([^\s]+)/i);
-
-    if (bundleIdMatch || nameMatch) {
-      let appInfo = {
-        bundleId: bundleIdMatch ? bundleIdMatch[1] : '',
-        name: nameMatch ? nameMatch[1].trim() : '',
-        version: versionMatch ? versionMatch[1] : '',
-        icon: ''
-      };
-
-      if (!appInfo.name && line.length > 0) {
-        appInfo.name = line.trim();
-      }
-
-      if (appInfo.bundleId || appInfo.name) {
-        apps.push(appInfo);
-      }
-    }
-  }
-
-  return apps;
+  return null;
 }
 
-// Check authentication status endpoint
-app.get('/api/auth/status', async (req, res) => {
-  console.log('[API] GET /api/auth/status - Checking if user is authenticated');
-
-  try {
-    // Try to get account info to see if user is authenticated
-    const result = await executeIpatool(['auth', 'info', '--keychain-passphrase', 'password']);
-
-    // If auth info succeeds, user is authenticated
-    console.log('[API] User is authenticated');
-    res.json({
-      authenticated: true,
-      message: 'User is authenticated'
-    });
-  } catch (error) {
-    console.log('[API] User is not authenticated:', error.message);
-    res.json({
-      authenticated: false,
-      message: 'User is not authenticated'
-    });
-  }
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Debug endpoint to view manifest as plain text
-app.get('/api/manifest/:bundleId/debug', (req, res) => {
-  const { bundleId } = req.params;
-  const fs = require('fs');
-  const path = require('path');
-
-  console.log('[DEBUG] Viewing manifest for bundle:', bundleId);
-
-  // Find the IPA file for this bundle ID in /tmp/ipatool_* directories
-  const tmpDir = '/tmp';
-  let ipaFile = null;
-  let appName = bundleId;
-
-  try {
-    const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
-
-    console.log('[DEBUG] Found ipatool directories:', entries);
-
-    for (const entry of entries) {
-      const dirPath = path.join(tmpDir, entry);
-
-      try {
-        const stat = fs.statSync(dirPath);
-        if (!stat.isDirectory()) continue;
-      } catch (error) {
-        continue;
-      }
-
-      const files = fs.readdirSync(dirPath);
-      const foundIpa = files.find(f => f.endsWith('.ipa'));
-
-      if (foundIpa) {
-        console.log('[DEBUG] Found IPA file:', foundIpa);
-        if (foundIpa.includes(bundleId) || !ipaFile) {
-          ipaFile = foundIpa;
-
-          // Extract app name from bundle ID (last part after final dot)
-          const bundleParts = bundleId.split('.');
-          const lastPart = bundleParts[bundleParts.length - 1];
-          appName = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
-
-          if (foundIpa.includes(bundleId)) {
-            break;
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[DEBUG] Error finding IPA:', error.message);
-  }
-
-  if (!ipaFile) {
-    return res.status(404).send(`No IPA file found for bundle ID: ${bundleId}\n\nChecked directories in /tmp starting with 'ipatool_'`);
-  }
-
-  const protocol = req.get('x-forwarded-proto') || req.protocol;
-  const host = publicHostname || req.get('host');
-  const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
-  const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
-
-  const manifest = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>items</key>
-    <array>
-        <dict>
-            <key>assets</key>
-            <array>
-                <dict>
-                    <key>kind</key>
-                    <string>software-package</string>
-                    <key>url</key>
-                    <string>${ipaUrl}</string>
-                </dict>
-            </array>
-            <key>metadata</key>
-            <dict>
-                <key>bundle-identifier</key>
-                <string>${bundleId}</string>
-                <key>bundle-version</key>
-                <string>1.0</string>
-                <key>kind</key>
-                <string>software</string>
-                <key>title</key>
-                <string>${appName}</string>
-            </dict>
-        </dict>
-    </array>
-</dict>
-</plist>
-
----DEBUG INFO---
-Protocol detected: ${protocol}
-Host: ${host}
-Base URL: ${baseUrl}
-IPA File: ${ipaFile}
-IPA URL: ${ipaUrl}
-Bundle ID: ${bundleId}
-App Name: ${appName}`;
-
-  res.setHeader('Content-Type', 'text/plain');
-  res.send(manifest);
-});
-
-// Endpoint to generate manifest.plist for OTA installation
-app.get('/api/manifest/:bundleId', (req, res) => {
-  const { bundleId } = req.params;
-  const fs = require('fs');
-  const path = require('path');
-
-  console.log('[API] Generating manifest for bundle:', bundleId);
-
-  // Find the IPA file for this bundle ID in /tmp/ipatool_* directories
-  const tmpDir = '/tmp';
-  let ipaFile = null;
-  let appName = bundleId; // fallback
-
-  try {
-    const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
-
-    for (const entry of entries) {
-      const dirPath = path.join(tmpDir, entry);
-
-      try {
-        const stat = fs.statSync(dirPath);
-        if (!stat.isDirectory()) continue;
-      } catch (error) {
-        continue;
-      }
-
-      const files = fs.readdirSync(dirPath);
-      const foundIpa = files.find(f => f.endsWith('.ipa'));
-
-      if (foundIpa) {
-        // Check if this IPA is for the requested bundle ID by examining the filename
-        // ipatool typically names files as BundleId_AppId_Version.ipa
-        // Example: org.whispersystems.signal_874139669_7.80.ipa
-        if (foundIpa.includes(bundleId) || !ipaFile) {
-          ipaFile = foundIpa;
-
-          // Extract app name from bundle ID (last part after final dot)
-          // org.whispersystems.signal -> Signal
-          const bundleParts = bundleId.split('.');
-          const lastPart = bundleParts[bundleParts.length - 1];
-          // Capitalize first letter
-          appName = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
-
-          if (foundIpa.includes(bundleId)) {
-            break; // Found exact match
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[API] Error finding IPA:', error.message);
-  }
-
-  if (!ipaFile) {
-    return res.status(404).json({ error: 'IPA file not found for this bundle ID' });
-  }
-
-  // Get the server URL from request headers
-  // Force HTTPS for manifest URL as iOS requires it
-  const protocol = req.get('x-forwarded-proto') || req.protocol;
-  const host = publicHostname || req.get('host');
-  const baseUrl = `${protocol === 'https' ? 'https' : 'https'}://${host}`;
-
-  const ipaUrl = `${baseUrl}/api/download-file/${encodeURIComponent(ipaFile)}`;
-  const manifestUrl = `${baseUrl}/api/manifest/${bundleId}`;
-  const debugUrl = `${baseUrl}/api/manifest/${bundleId}/debug`;
-
-  console.log('[API] Generating manifest for:', ipaFile);
-  console.log('[API] Base URL:', baseUrl);
-  console.log('[API] Manifest URL:', manifestUrl);
-  console.log('[API] Debug URL:', debugUrl);
-  console.log('[API] IPA URL:', ipaUrl);
-  console.log('[API] Protocol detected:', protocol, 'Host:', host, 'Public hostname override:', publicHostname || 'none');
-
-  // Generate manifest.plist
-  const manifest = `<?xml version="1.0" encoding="UTF-8"?>
+function buildManifest({ bundleId, appName, ipaUrl }) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -659,90 +389,119 @@ app.get('/api/manifest/:bundleId', (req, res) => {
     </array>
 </dict>
 </plist>`;
+}
 
-  console.log('[API] ========== MANIFEST RESPONSE ==========');
-  console.log(manifest);
-  console.log('[API] ============================================');
+function appNameFromBundleId(bundleId) {
+  const parts = bundleId.split('.');
+  const last = parts[parts.length - 1] || bundleId;
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
+app.get('/api/accounts/:accountId/manifest/:bundleId', (req, res) => {
+  const { accountId, bundleId } = req.params;
+  if (!getAccountById(accountId)) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  const found = findIpaForAccount(accountId, bundleId);
+  if (!found) {
+    return res.status(404).json({ error: 'IPA file not found for this bundle ID' });
+  }
+
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = publicHostname || req.get('host');
+  // iOS requires HTTPS for OTA manifests — force it.
+  const baseUrl = `https://${host}`;
+  const ipaUrl = `${baseUrl}/api/accounts/${accountId}/download-file/${encodeURIComponent(found.file)}`;
+
+  console.log('[API] Manifest for', bundleId, '→', found.file, '(account', accountId, ')');
 
   res.setHeader('Content-Type', 'application/xml');
-  res.send(manifest);
+  res.send(buildManifest({ bundleId, appName: appNameFromBundleId(bundleId), ipaUrl }));
 });
 
-// Endpoint to serve downloaded IPA files for OTA installation
-app.get('/api/download-file/:filename', (req, res) => {
-  const { filename } = req.params;
-  const fs = require('fs');
-  const path = require('path');
+app.get('/api/accounts/:accountId/download-file/:filename', (req, res) => {
+  const { accountId, filename } = req.params;
+  if (!getAccountById(accountId)) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
 
-  console.log('[API] Serving IPA file:', filename);
+  const filePath = findIpaFileForAccount(accountId, filename);
+  if (!filePath) {
+    return res.status(404).json({ error: 'File not found' });
+  }
 
-  // Look for the file in /tmp/ipatool_* directories
-  const tmpDir = '/tmp';
-  const entries = fs.readdirSync(tmpDir).filter(d => d.startsWith('ipatool_'));
+  const stats = fs.statSync(filePath);
+  console.log('[API] Serving IPA:', filename, '(', stats.size, 'bytes, account', accountId, ')');
 
-  for (const entry of entries) {
-    const dirPath = path.join(tmpDir, entry);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Length', stats.size);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Accept-Ranges', 'bytes');
 
-    // Check if it's actually a directory before trying to read it
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', (error) => {
+    console.error('[API] File stream error:', error);
+    if (!res.headersSent) res.status(500).send('File streaming error');
+  });
+  stream.pipe(res);
+});
+
+// ---------- Search result parser ----------
+
+function stripAnsiCodes(str) {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+}
+
+function parseSearchResults(output) {
+  output = stripAnsiCodes(output);
+  const jsonMatch = output.match(/apps=(\[.*?\])\s+count=/);
+  if (jsonMatch) {
     try {
-      const stat = fs.statSync(dirPath);
-      if (!stat.isDirectory()) {
-        continue; // Skip files, only process directories
-      }
+      const appsData = JSON.parse(jsonMatch[1]);
+      return appsData.map((app) => ({
+        name: app.name || '',
+        bundleId: app.bundleID || '',
+        version: app.version || '',
+        icon: '',
+      }));
     } catch (error) {
-      console.warn('[API] Error checking path:', dirPath, error.message);
-      continue;
-    }
-
-    const files = fs.readdirSync(dirPath);
-    const ipaFile = files.find(f => f === filename);
-
-    if (ipaFile) {
-      const filePath = path.join(dirPath, ipaFile);
-      console.log('[API] Found IPA at:', filePath);
-
-      // Get file stats to set Content-Length header (required by iOS)
-      const stats = fs.statSync(filePath);
-      const fileSize = stats.size;
-
-      console.log('[API] IPA file size:', fileSize, 'bytes');
-
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Length', fileSize);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Accept-Ranges', 'bytes');
-
-      const fileStream = fs.createReadStream(filePath);
-
-      fileStream.on('error', (error) => {
-        console.error('[API] File stream error:', error);
-        if (!res.headersSent) {
-          res.status(500).send('File streaming error');
-        }
-      });
-
-      fileStream.on('end', () => {
-        console.log('[API] IPA file streaming completed');
-      });
-
-      fileStream.pipe(res);
-      return;
+      console.error('[Parse] Failed to parse JSON:', error);
     }
   }
 
-  res.status(404).json({ error: 'File not found' });
-});
+  const apps = [];
+  const lines = output.split('\n').filter((l) => l.trim());
+  for (const line of lines) {
+    const bundleIdMatch =
+      line.match(/Bundle ID:\s*([^\s]+)/i) ||
+      line.match(/([a-z0-9\.]+\.[a-z0-9\.]+)/i);
+    const nameMatch = line.match(/Name:\s*(.+?)(?:\s+Version:|$)/i);
+    const versionMatch = line.match(/Version:\s*([^\s]+)/i);
 
-// Start HTTP server (SSL terminated at nginx reverse proxy)
+    if (bundleIdMatch || nameMatch) {
+      const appInfo = {
+        bundleId: bundleIdMatch ? bundleIdMatch[1] : '',
+        name: nameMatch ? nameMatch[1].trim() : '',
+        version: versionMatch ? versionMatch[1] : '',
+        icon: '',
+      };
+      if (!appInfo.name && line.length > 0) appInfo.name = line.trim();
+      if (appInfo.bundleId || appInfo.name) apps.push(appInfo);
+    }
+  }
+  return apps;
+}
+
+// ---------- Start ----------
+
 app.listen(port, '0.0.0.0', () => {
-  console.log(`========================================`);
-  console.log(`HTTP Server running (behind proxy)`);
-  console.log(`========================================`);
+  console.log('========================================');
+  console.log('HTTP Server running (behind proxy)');
+  console.log('========================================');
   console.log(`Server: http://0.0.0.0:${port}`);
-  console.log(`Local:  http://localhost:${port}`);
-  if (publicHostname) {
-    console.log(`Public: https://${publicHostname}`);
-  }
-  console.log(`\nOTA Installation: ENABLED via proxy`);
-  console.log(`========================================`);
+  if (publicHostname) console.log(`Public: https://${publicHostname}`);
+  console.log(`Data dir: ${DATA_DIR}`);
+  console.log('========================================');
 });

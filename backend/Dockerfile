@@ -1,10 +1,14 @@
 FROM node:20-alpine
 
-# Install dependencies for building ipatool
+# Install dependencies for building ipatool (Go toolchain) and the
+# better-sqlite3 native binding (python3 / make / g++).
 RUN apk add --no-cache \
     go \
     git \
-    musl-dev
+    musl-dev \
+    python3 \
+    make \
+    g++
 
 # Build and install ipatool from source
 # Pinned to v2.3.0 — master after 2026-04-14 has a context-key regression

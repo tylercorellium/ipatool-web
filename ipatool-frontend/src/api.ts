@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { AuthCredentials, AuthResponse, SearchResponse } from './types';
 
+// Backend uses a signed cookie to identify the active account; browsers only
+// send cookies on cross-origin requests when withCredentials is set.
+axios.defaults.withCredentials = true;
+
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 const ensureApiSuffix = (value: string) => {

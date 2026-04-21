@@ -13,8 +13,8 @@ services:
       - PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-apps.pwndarw.in}
       - NODE_ENV=production
     volumes:
-      # Mount /tmp for IPA file storage (ephemeral)
-      - ipatool-tmp:/tmp
+      # Persistent storage for SQLite DB, per-account keychains, and downloads
+      - ipatool-data:/data
     networks:
       - ipatool-network
     healthcheck:
@@ -47,5 +47,5 @@ networks:
     driver: bridge
 
 volumes:
-  ipatool-tmp:
+  ipatool-data:
     driver: local

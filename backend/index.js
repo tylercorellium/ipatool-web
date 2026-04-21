@@ -279,7 +279,25 @@ app.post('/api/download', async (req, res) => {
     ];
 
     console.log('[API] Downloading IPA...');
-    const result = await executeIpatool(args);
+    let result;
+    try {
+      result = await executeIpatool(args);
+    } catch (err) {
+      // ipatool requires an App Store license before the first download of a
+      // given app. Acquire the free license and retry once.
+      if (err.message && err.message.includes('license is required')) {
+        console.log('[API] License required — acquiring via ipatool purchase...');
+        await executeIpatool([
+          'purchase',
+          '--bundle-identifier', bundleId,
+          '--keychain-passphrase', 'password'
+        ]);
+        console.log('[API] License acquired, retrying download...');
+        result = await executeIpatool(args);
+      } else {
+        throw err;
+      }
+    }
     console.log('[API] Download command completed');
 
     // Find the .ipa file in the output directory

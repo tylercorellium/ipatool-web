@@ -15,6 +15,9 @@ const {
   renameAccount,
   deleteAccount,
   recordDownload,
+  listDownloads,
+  getDownloadById,
+  deleteDownload,
   downloadCountsByAccount,
 } = require('./db');
 const {
@@ -305,6 +308,79 @@ app.delete('/api/accounts/:id', (req, res) => {
   res.json({ success: true, deletedActive: wasActive });
 });
 
+// ---------- Download history ----------
+
+// Look up an .ipa file's absolute path for a given account + filename. Mirrors
+// findIpaFileForAccount below but returns both the absolute path and its
+// existence in one pass so we can flag stale history rows.
+function resolveAccountFile(accountId, filename) {
+  const dir = accountDownloadsDir(accountId);
+  let entries;
+  try { entries = fs.readdirSync(dir); } catch { return null; }
+  for (const entry of entries) {
+    const subdir = path.join(dir, entry);
+    try {
+      if (!fs.statSync(subdir).isDirectory()) continue;
+    } catch { continue; }
+    const candidate = path.join(subdir, filename);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function serializeDownload(row) {
+  const filePath = resolveAccountFile(row.account_id, row.filename);
+  const fileExists = !!filePath;
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    bundleId: row.bundle_id,
+    appName: row.app_name,
+    version: row.version,
+    filename: row.filename,
+    size: row.size,
+    downloadedAt: row.downloaded_at,
+    fileExists,
+    downloadUrl: fileExists
+      ? `/api/accounts/${row.account_id}/download-file/${encodeURIComponent(row.filename)}`
+      : null,
+    manifestUrl: fileExists
+      ? `/api/accounts/${row.account_id}/manifest/${row.bundle_id}`
+      : null,
+  };
+}
+
+app.get('/api/downloads', requireActiveAccount, (req, res) => {
+  const rows = listDownloads(req.account.id);
+  res.json({ downloads: rows.map(serializeDownload) });
+});
+
+app.delete('/api/downloads/:id', requireActiveAccount, (req, res) => {
+  const id = Number(req.params.id);
+  const row = getDownloadById(id);
+  if (!row) return res.status(404).json({ error: 'Download not found' });
+  if (row.account_id !== req.account.id) {
+    return res.status(403).json({ error: 'Not your download' });
+  }
+
+  const filePath = resolveAccountFile(row.account_id, row.filename);
+  if (filePath) {
+    try {
+      fs.unlinkSync(filePath);
+      // Remove the (now-empty) timestamp dir so /data/downloads doesn't bloat.
+      const parent = path.dirname(filePath);
+      try {
+        if (fs.readdirSync(parent).length === 0) fs.rmdirSync(parent);
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[API] Failed to delete file', filePath, err.message);
+    }
+  }
+
+  deleteDownload(id);
+  res.json({ success: true });
+});
+
 // ---------- Per-account "downloadme" bundle ----------
 // Streams a zip of /data/accounts/<id>/downloadme/ for whichever account is
 // active. Presence of the folder on the VPS is the feature flag — no email
@@ -362,7 +438,7 @@ app.post('/api/search', requireActiveAccount, async (req, res) => {
 // ---------- Download ----------
 
 app.post('/api/download', requireActiveAccount, async (req, res) => {
-  const { bundleId, directDownload } = req.body;
+  const { bundleId, directDownload, name, version } = req.body;
   console.log(
     '[API] POST /api/download - Bundle ID:', bundleId,
     'Direct:', !!directDownload,
@@ -415,8 +491,8 @@ app.post('/api/download', requireActiveAccount, async (req, res) => {
     recordDownload({
       accountId,
       bundleId,
-      appName: null,
-      version: null,
+      appName: typeof name === 'string' && name.trim() ? name.trim() : null,
+      version: typeof version === 'string' && version.trim() ? version.trim() : null,
       filename: ipaFile,
       size: stat.size,
     });

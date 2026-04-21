@@ -20,19 +20,19 @@ import { BACKEND_BASE_URL, api } from '../api';
 
 interface AppListProps {
   apps: App[];
-  onDownload: (bundleId: string) => Promise<void>;
+  onDownload: (app: App) => Promise<void>;
 }
 
 const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isHttps, setIsHttps] = useState(window.location.protocol === 'https:');
+  const [isHttps] = useState(window.location.protocol === 'https:');
 
-  const handleDownload = async (bundleId: string) => {
-    setDownloadingId(bundleId);
+  const handleDownload = async (app: App) => {
+    setDownloadingId(app.bundleId);
     setError(null);
     try {
-      await onDownload(bundleId);
+      await onDownload(app);
     } catch (err: any) {
       setError(err.message || 'Download failed');
     } finally {
@@ -40,31 +40,32 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
     }
   };
 
-  const handleInstall = async (bundleId: string, appName: string) => {
+  const handleInstall = async (app: App) => {
     if (!isHttps) {
       setError('Direct installation requires HTTPS. Please download the IPA file instead.');
       return;
     }
 
-    setDownloadingId(bundleId);
+    setDownloadingId(app.bundleId);
     setError(null);
 
     try {
-      // First, prepare the IPA for OTA installation
-      console.log('[Install] Preparing IPA for OTA installation:', bundleId);
-      const result = await api.download(bundleId, false);
+      console.log('[Install] Preparing IPA for OTA installation:', app.bundleId);
+      const result = await api.download(app.bundleId, false, {
+        name: app.name,
+        version: app.version,
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to prepare IPA');
       }
 
-      // Generate the itms-services URL for OTA installation using bundleId
-      const baseUrl = BACKEND_BASE_URL;
-      const manifestUrl = `${baseUrl}/api/manifest/${encodeURIComponent(bundleId)}`;
+      // Backend returns a path like /api/accounts/<id>/manifest/<bundleId>.
+      // iOS needs an absolute URL for the OTA manifest.
+      const manifestUrl = `${BACKEND_BASE_URL}${result.manifestUrl}`;
       const installUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
 
       console.log('[Install] Opening OTA installation URL');
-      // Open the installation URL
       window.location.href = installUrl;
     } catch (err: any) {
       console.error('[Install] Error:', err);
@@ -181,7 +182,7 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
                       <DownloadIcon />
                     )
                   }
-                  onClick={() => handleDownload(app.bundleId)}
+                  onClick={() => handleDownload(app)}
                   disabled={!app.bundleId || downloadingId === app.bundleId}
                   sx={{ flex: 1 }}
                 >
@@ -189,7 +190,7 @@ const AppList: React.FC<AppListProps> = ({ apps, onDownload }) => {
                 </Button>
                 <Button
                   startIcon={<InstallMobileIcon />}
-                  onClick={() => handleInstall(app.bundleId, app.name)}
+                  onClick={() => handleInstall(app)}
                   disabled={!app.bundleId || downloadingId === app.bundleId}
                   color={isHttps ? 'primary' : 'secondary'}
                   sx={{ flex: 1 }}

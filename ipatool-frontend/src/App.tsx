@@ -8,6 +8,8 @@ import {
   Button,
   CircularProgress,
   Alert,
+  Tabs,
+  Tab,
   ThemeProvider,
   createTheme,
   CssBaseline
@@ -21,6 +23,7 @@ import SearchBar from './components/SearchBar';
 import AppList from './components/AppList';
 import AccountMenu from './components/AccountMenu';
 import AccountsManager from './components/AccountsManager';
+import DownloadHistory from './components/DownloadHistory';
 import { api, BACKEND_BASE_URL } from './api';
 import { App as AppType, AuthCredentials, Account } from './types';
 
@@ -52,6 +55,9 @@ function App() {
   const [addingAccount, setAddingAccount] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [prefillEmail, setPrefillEmail] = useState<string | undefined>(undefined);
+  const [tab, setTab] = useState<'search' | 'history'>('search');
+  // Bump this to force DownloadHistory to refetch after a new download.
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   console.log('[App] Component state:', { isAuthenticated, isLoading, requiresTwoFactor, hasError: !!error });
 
@@ -228,19 +234,24 @@ function App() {
     }
   };
 
-  const handleDownload = async (bundleId: string) => {
+  const handleDownload = async (app: AppType) => {
     try {
-      const blob = await api.download(bundleId);
+      const blob = await api.download(app.bundleId, true, {
+        name: app.name,
+        version: app.version,
+      });
 
-      // Create a download link and trigger it
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${bundleId}.ipa`;
+      link.download = `${app.bundleId}.ipa`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+
+      // Trigger history refetch next time the tab is visited.
+      setHistoryVersion((v) => v + 1);
     } catch (err: any) {
       throw new Error(err.response?.data?.error || 'Download failed');
     }
@@ -354,28 +365,42 @@ function App() {
             </Box>
           ) : (
             <Box>
-              <Typography variant="h4" component="h1" gutterBottom>
-                Search iOS Apps
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                Search for iOS applications and download .ipa files
-              </Typography>
+              <Tabs
+                value={tab}
+                onChange={(_, v) => setTab(v)}
+                sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}
+              >
+                <Tab value="search" label="Search" />
+                <Tab value="history" label="History" />
+              </Tabs>
 
-              <SearchBar onSearch={handleSearch} isLoading={isSearching} />
+              {tab === 'search' && (
+                <Box>
+                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                    Search for iOS applications and download .ipa files
+                  </Typography>
 
-              {isSearching && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-                  <CircularProgress />
+                  <SearchBar onSearch={handleSearch} isLoading={isSearching} />
+
+                  {isSearching && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+                      <CircularProgress />
+                    </Box>
+                  )}
+
+                  {error && !isSearching && (
+                    <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                      {error}
+                    </Alert>
+                  )}
+
+                  {!isSearching && <AppList apps={apps} onDownload={handleDownload} />}
                 </Box>
               )}
 
-              {error && !isSearching && (
-                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-                  {error}
-                </Alert>
+              {tab === 'history' && (
+                <DownloadHistory key={historyVersion} isHttps={isHttps} />
               )}
-
-              {!isSearching && <AppList apps={apps} onDownload={handleDownload} />}
             </Box>
           )}
         </Container>

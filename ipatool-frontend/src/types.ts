@@ -36,6 +36,24 @@ export interface DeleteAccountResponse {
   deletedActive: boolean;
 }
 
+export interface Download {
+  id: number;
+  accountId: string;
+  bundleId: string;
+  appName: string | null;
+  version: string | null;
+  filename: string;
+  size: number | null;
+  downloadedAt: number;
+  fileExists: boolean;
+  downloadUrl: string | null;
+  manifestUrl: string | null;
+}
+
+export interface DownloadsResponse {
+  downloads: Download[];
+}
+
 export interface AuthResponse {
   success: boolean;
   requiresTwoFactor?: boolean;

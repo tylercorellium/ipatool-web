@@ -6,6 +6,7 @@ import {
   AccountsResponse,
   SwitchAccountResponse,
   DeleteAccountResponse,
+  DownloadsResponse,
   SearchResponse,
 } from './types';
 
@@ -163,26 +164,29 @@ export const api = {
     }
   },
 
-  async download(bundleId: string, directDownload: boolean = true): Promise<any> {
+  async download(
+    bundleId: string,
+    directDownload: boolean = true,
+    meta?: { name?: string; version?: string }
+  ): Promise<any> {
     console.log('[API] Downloading app:', bundleId, 'Direct:', directDownload);
+    const payload = {
+      bundleId,
+      directDownload,
+      name: meta?.name,
+      version: meta?.version,
+    };
+    const config = directDownload ? { responseType: 'blob' as const } : undefined;
+    const response = await axios.post(`${API_BASE_URL}/download`, payload, config);
+    return response.data;
+  },
 
-    if (directDownload) {
-      // Direct download - returns blob
-      const response = await axios.post(
-        `${API_BASE_URL}/download`,
-        { bundleId, directDownload: true },
-        { responseType: 'blob' }
-      );
-      console.log('[API] Download complete');
-      return response.data;
-    } else {
-      // OTA preparation - returns metadata
-      const response = await axios.post(
-        `${API_BASE_URL}/download`,
-        { bundleId, directDownload: false }
-      );
-      console.log('[API] IPA prepared for OTA:', response.data);
-      return response.data;
-    }
-  }
+  async listDownloads(): Promise<DownloadsResponse> {
+    const response = await axios.get(`${API_BASE_URL}/downloads`);
+    return response.data;
+  },
+
+  async deleteDownload(id: number): Promise<void> {
+    await axios.delete(`${API_BASE_URL}/downloads/${id}`);
+  },
 };
